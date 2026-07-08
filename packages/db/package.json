@@ -13,10 +13,11 @@
   },
   "scripts": {
     "build": "pnpm db:generate && tsc -p tsconfig.json",
-    "lint": "eslint src --max-warnings=0",
+    "lint": "eslint src prisma --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "prisma generate --schema prisma/schema.prisma",
     "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio --schema prisma/schema.prisma"
   },
   "dependencies": {
@@ -28,6 +29,10 @@
     "@types/pg": "latest",
     "dotenv": "latest",
     "prisma": "latest",
+    "tsx": "latest",
     "typescript": "latest"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }

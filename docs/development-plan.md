@@ -11,10 +11,14 @@
 
 ## Phase 2: Core App Shell
 
+- Complete the multi-tenant CRM database model for WhatsApp accounts, contacts, conversations, messages, customer events, sales, payments, support tickets, AI classifications, notifications, memberships, and audit logs.
+- Add demo seed data for local development.
 - Add authentication and tenant selection.
 - Add tenant-scoped authorization helpers.
 - Add application layout, navigation, and protected routes.
 - Add audit logging utilities for critical state changes.
+
+The objective of Step 2 is database design only. It prepares the tenant-safe data foundation for later app workflows without implementing real WhatsApp providers, real OpenAI calls, or full login.
 
 ## Phase 3: Conversation and CRM Model
 

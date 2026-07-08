@@ -6,139 +6,393 @@ datasource db {
   provider = "postgresql"
 }
 
-enum ConversationChannel {
-  WHATSAPP
+enum MembershipRole {
+  OWNER
+  ADMIN
+  AGENT
+  VIEWER
 }
 
-enum ConversationDirection {
+enum WhatsAppProvider {
+  EVOLUTION
+  META_CLOUD
+}
+
+enum WhatsAppAccountStatus {
+  CONNECTED
+  DISCONNECTED
+  PENDING
+  ERROR
+}
+
+enum ContactStage {
+  NEW
+  PROSPECT
+  QUOTED
+  SOLD
+  PENDING_PAYMENT
+  PENDING_CONFIGURATION
+  ACTIVE_CUSTOMER
+  SUPPORT_REQUESTED
+  MAINTENANCE
+  WARRANTY
+  LOST
+  SPAM
+}
+
+enum ConversationStage {
+  NEW
+  OPEN
+  WAITING_CUSTOMER
+  WAITING_AGENT
+  ESCALATED
+  CLOSED
+}
+
+enum MessageDirection {
   INBOUND
   OUTBOUND
 }
 
-enum ConversationStatus {
-  OPEN
+enum MessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+  LOCATION
+  UNKNOWN
+}
+
+enum SaleStatus {
   PENDING
-  RESOLVED
-  CLOSED
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+  CANCELLED
 }
 
 enum SupportStatus {
   OPEN
   IN_PROGRESS
-  WAITING_ON_CUSTOMER
+  WAITING_CUSTOMER
   RESOLVED
-  CLOSED
-}
-
-enum PaymentStatus {
-  PENDING
-  PAID
-  FAILED
-  REFUNDED
   CANCELLED
 }
 
-enum AiSuggestionKind {
-  CLASSIFICATION
-  SUMMARY
-  URGENCY
-  NEXT_ACTION
+enum Urgency {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AIIntent {
+  SALES
+  QUOTE
+  PAYMENT
+  SUPPORT
+  CONFIGURATION
+  WARRANTY
+  COMPLAINT
+  FOLLOW_UP
+  INFORMATION
+  SPAM
+  UNKNOWN
+}
+
+enum NotificationType {
+  INFO
+  ACTION_REQUIRED
+  PAYMENT_DUE
+  SUPPORT_ESCALATED
+  AI_SUGGESTION
+  SYSTEM
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+  ASSIGNMENT_CHANGE
+  SALE_RECORDED
+  PAYMENT_UPDATED
+  SUPPORT_OPENED
+  AI_CLASSIFIED
+  NOTIFICATION_READ
+}
+
+enum CustomerEventType {
+  STATUS_CHANGED
+  SALE_RECORDED
+  PAYMENT_UPDATED
+  SUPPORT_OPENED
+  INTERNAL_NOTE
+  AI_CLASSIFIED
+  NOTIFICATION_CREATED
 }
 
 model Tenant {
-  id                      String                   @id @default(cuid())
-  name                    String
-  slug                    String                   @unique
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  users                   AppUser[]
-  contacts                Contact[]
-  conversations           Conversation[]
-  messages                Message[]
-  customerStatuses        CustomerStatus[]
-  supportTickets          SupportTicket[]
-  paymentRecords          PaymentRecord[]
-  auditLogs               AuditLog[]
-  aiClassificationResults AiClassificationResult[]
+  id                  String                @id @default(cuid())
+  name                String
+  slug                String                @unique
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  memberships         Membership[]
+  whatsappAccounts    WhatsAppAccount[]
+  contacts            Contact[]
+  conversations       Conversation[]
+  messages            Message[]
+  customerEvents      CustomerEvent[]
+  sales               Sale[]
+  payments            Payment[]
+  supportTickets      SupportTicket[]
+  aiClassifications   AIClassification[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+
+  @@index([createdAt])
 }
 
-model AppUser {
-  id        String     @id @default(cuid())
-  tenantId  String
-  email     String
-  name      String?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  auditLogs AuditLog[]
+model User {
+  id                    String          @id @default(cuid())
+  email                 String          @unique
+  name                  String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  memberships           Membership[]
+  assignedConversations Conversation[]  @relation("ConversationAssignee")
+  assignedTickets       SupportTicket[] @relation("SupportTicketAssignee")
+  notifications         Notification[]
+  customerEvents        CustomerEvent[]
+  auditLogs             AuditLog[]
 
-  @@unique([tenantId, email])
+  @@index([email])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Membership {
+  id        String         @id @default(cuid())
+  tenantId  String
+  userId    String
+  role      MembershipRole @default(AGENT)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
   @@index([tenantId])
+  @@index([tenantId, role])
+  @@index([userId])
+}
+
+model WhatsAppAccount {
+  id                    String                @id @default(cuid())
+  tenantId              String
+  name                  String
+  phoneNumber           String
+  normalizedPhoneNumber String
+  provider              WhatsAppProvider
+  status                WhatsAppAccountStatus @default(PENDING)
+  providerAccountId     String?
+  providerMetadata      Json?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  tenant                Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversations         Conversation[]
+  messages              Message[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, normalizedPhoneNumber])
+  @@index([tenantId])
+  @@index([tenantId, phoneNumber])
+  @@index([tenantId, provider])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
 }
 
 model Contact {
-  id            String         @id @default(cuid())
-  tenantId      String
-  displayName   String
-  phoneNumber   String
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  conversations Conversation[]
-  tickets       SupportTicket[]
-  payments      PaymentRecord[]
+  id                    String             @id @default(cuid())
+  tenantId              String
+  name                  String
+  normalizedPhoneNumber String
+  phoneNumber           String?
+  email                 String?
+  stage                 ContactStage       @default(NEW)
+  notes                 String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  tenant                Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversations         Conversation[]
+  messages              Message[]
+  customerEvents        CustomerEvent[]
+  sales                 Sale[]
+  payments              Payment[]
+  supportTickets        SupportTicket[]
+  aiClassifications     AIClassification[]
 
-  @@unique([tenantId, phoneNumber])
+  @@unique([tenantId, id])
+  @@unique([tenantId, normalizedPhoneNumber])
   @@index([tenantId])
+  @@index([tenantId, phoneNumber])
+  @@index([tenantId, email])
+  @@index([tenantId, stage])
+  @@index([tenantId, createdAt])
 }
 
 model Conversation {
-  id                      String                   @id @default(cuid())
-  tenantId                String
-  contactId               String
-  channel                 ConversationChannel
-  status                  ConversationStatus       @default(OPEN)
-  externalConversationId  String?
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  tenant                  Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact                 Contact                  @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  messages                Message[]
-  tickets                 SupportTicket[]
-  aiClassificationResults AiClassificationResult[]
+  id                String             @id @default(cuid())
+  tenantId          String
+  contactId         String
+  whatsappAccountId String
+  assignedUserId    String?
+  stage             ConversationStage  @default(NEW)
+  subject           String?
+  lastMessageAt     DateTime?
+  closedAt          DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact           Contact            @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
+  whatsappAccount   WhatsAppAccount    @relation(fields: [tenantId, whatsappAccountId], references: [tenantId, id], onDelete: Cascade)
+  assignedUser      User?              @relation("ConversationAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  messages          Message[]
+  customerEvents    CustomerEvent[]
+  sales             Sale[]
+  supportTickets    SupportTicket[]
+  aiClassifications AIClassification[]
 
-  @@index([tenantId, status])
+  @@unique([tenantId, id])
+  @@index([tenantId])
   @@index([tenantId, contactId])
-  @@index([tenantId, externalConversationId])
+  @@index([tenantId, whatsappAccountId])
+  @@index([tenantId, assignedUserId])
+  @@index([tenantId, stage])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, lastMessageAt])
 }
 
 model Message {
-  id                String                @id @default(cuid())
+  id                String              @id @default(cuid())
   tenantId          String
   conversationId    String
-  direction         ConversationDirection
-  externalMessageId String?
+  contactId         String
+  whatsappAccountId String
+  direction         MessageDirection
+  type              MessageType         @default(TEXT)
   text              String?
+  providerMessageId String?
+  rawPayload        Json?
   sentAt            DateTime
-  createdAt         DateTime              @default(now())
-  tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation      Conversation        @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
+  contact           Contact             @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
+  whatsappAccount   WhatsAppAccount     @relation(fields: [tenantId, whatsappAccountId], references: [tenantId, id], onDelete: Cascade)
+  aiClassifications AIClassification[]
 
+  @@unique([tenantId, id])
+  @@unique([tenantId, providerMessageId])
+  @@index([tenantId])
   @@index([tenantId, conversationId])
-  @@index([tenantId, externalMessageId])
+  @@index([tenantId, conversationId, createdAt])
+  @@index([tenantId, contactId])
+  @@index([tenantId, contactId, createdAt])
+  @@index([tenantId, providerMessageId])
+  @@index([tenantId, type])
+  @@index([tenantId, createdAt])
 }
 
-model CustomerStatus {
-  id          String   @id @default(cuid())
-  tenantId    String
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+model CustomerEvent {
+  id             String            @id @default(cuid())
+  tenantId       String
+  contactId      String
+  conversationId String?
+  actorUserId    String?
+  type           CustomerEventType
+  title          String
+  description    String?
+  metadata       Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact        Contact           @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
+  conversation   Conversation?     @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: SetNull)
+  actor          User?             @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
-  @@unique([tenantId, name])
+  @@unique([tenantId, id])
   @@index([tenantId])
+  @@index([tenantId, contactId])
+  @@index([tenantId, conversationId])
+  @@index([tenantId, type])
+  @@index([tenantId, createdAt])
+}
+
+model Sale {
+  id             String     @id @default(cuid())
+  tenantId       String
+  contactId      String
+  conversationId String?
+  product        String
+  amountCents    Int
+  currency       String     @default("MXN")
+  soldAt         DateTime
+  status         SaleStatus @default(PENDING)
+  notes          String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  tenant         Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact        Contact    @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
+  conversation   Conversation? @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: SetNull)
+  payments       Payment[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId])
+  @@index([tenantId, contactId])
+  @@index([tenantId, conversationId])
+  @@index([tenantId, status])
+  @@index([tenantId, soldAt])
+  @@index([tenantId, createdAt])
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  tenantId        String
+  contactId       String
+  saleId          String?
+  amountDueCents  Int
+  amountPaidCents Int           @default(0)
+  currency        String        @default("MXN")
+  dueDate         DateTime?
+  paidAt          DateTime?
+  status          PaymentStatus @default(PENDING)
+  reference       String?
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact         Contact       @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
+  sale            Sale?         @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: SetNull)
+
+  @@unique([tenantId, id])
+  @@index([tenantId])
+  @@index([tenantId, contactId])
+  @@index([tenantId, saleId])
+  @@index([tenantId, status])
+  @@index([tenantId, dueDate])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, reference])
 }
 
 model SupportTicket {
@@ -146,66 +400,98 @@ model SupportTicket {
   tenantId       String
   contactId      String
   conversationId String?
-  status         SupportStatus @default(OPEN)
+  assignedUserId String?
   title          String
+  description    String?
+  status         SupportStatus @default(OPEN)
+  priority       Urgency       @default(MEDIUM)
+  openedAt       DateTime      @default(now())
+  resolvedAt     DateTime?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact        Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  contact        Contact       @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
+  conversation   Conversation? @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: SetNull)
+  assignedUser   User?         @relation("SupportTicketAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
 
-  @@index([tenantId, status])
+  @@unique([tenantId, id])
+  @@index([tenantId])
   @@index([tenantId, contactId])
-}
-
-model PaymentRecord {
-  id          String        @id @default(cuid())
-  tenantId    String
-  contactId   String
-  status      PaymentStatus @default(PENDING)
-  amountCents Int
-  currency    String
-  reference   String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact     Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId, status])
-  @@index([tenantId, contactId])
-  @@index([tenantId, reference])
-}
-
-model AiClassificationResult {
-  id             String           @id @default(cuid())
-  tenantId       String
-  conversationId String
-  kind           AiSuggestionKind
-  content        String
-  confidence     Float?
-  acceptedAt     DateTime?
-  rejectedAt     DateTime?
-  createdAt      DateTime         @default(now())
-  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-
   @@index([tenantId, conversationId])
-  @@index([tenantId, kind])
+  @@index([tenantId, assignedUserId])
+  @@index([tenantId, status])
+  @@index([tenantId, priority])
+  @@index([tenantId, createdAt])
+}
+
+model AIClassification {
+  id                String       @id @default(cuid())
+  tenantId          String
+  conversationId    String
+  contactId         String
+  messageId         String?
+  detectedIntent    AIIntent
+  urgency           Urgency
+  confidence        Float
+  summary           String?
+  recommendedAction String?
+  rawResult         Json?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  tenant            Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation      Conversation @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
+  contact           Contact      @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
+  message           Message?     @relation(fields: [tenantId, messageId], references: [tenantId, id], onDelete: SetNull)
+
+  @@unique([tenantId, id])
+  @@index([tenantId])
+  @@index([tenantId, conversationId])
+  @@index([tenantId, contactId])
+  @@index([tenantId, messageId])
+  @@index([tenantId, detectedIntent])
+  @@index([tenantId, urgency])
+  @@index([tenantId, createdAt])
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  tenantId    String
+  userId      String?
+  type        NotificationType
+  title       String
+  description String?
+  isRead      Boolean          @default(false)
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, id])
+  @@index([tenantId])
+  @@index([tenantId, userId])
+  @@index([tenantId, type])
+  @@index([tenantId, isRead])
+  @@index([tenantId, createdAt])
 }
 
 model AuditLog {
-  id         String   @id @default(cuid())
-  tenantId   String
+  id          String      @id @default(cuid())
+  tenantId    String
   actorUserId String?
-  entityType String
-  entityId   String
-  action     String
-  before     Json?
-  after      Json?
-  createdAt  DateTime @default(now())
-  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  actor      AppUser? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  action      AuditAction
+  entityType  String
+  entityId    String
+  before      Json?
+  after       Json?
+  createdAt   DateTime    @default(now())
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor       User?       @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
+  @@unique([tenantId, id])
+  @@index([tenantId])
+  @@index([tenantId, actorUserId])
+  @@index([tenantId, action])
   @@index([tenantId, entityType, entityId])
   @@index([tenantId, createdAt])
 }

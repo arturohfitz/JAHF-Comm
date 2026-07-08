@@ -18,6 +18,22 @@ JAHF Comm is organized as a pnpm workspace with deployable apps under `apps` and
 
 Tenant isolation is a primary invariant. Tenant-owned tables include `tenantId`, and business queries must scope reads and writes by `tenantId`. Cross-tenant reports or operations should be explicit administrative workflows with separate authorization.
 
+The Step 2 database model reinforces this by making business records tenant scoped and by using composite relations such as `[tenantId, contactId]`, `[tenantId, conversationId]`, and `[tenantId, whatsappAccountId]`. This keeps contacts, conversations, messages, sales, payments, support tickets, AI classifications, notifications, customer timeline events, and audit logs attached to the same tenant boundary.
+
+## Data Model
+
+- `Tenant`: company using JAHF Comm.
+- `User` and `Membership`: global user identity plus tenant membership and role (`OWNER`, `ADMIN`, `AGENT`, `VIEWER`).
+- `WhatsAppAccount`: tenant-owned WhatsApp number or instance. It stores provider identity and connection status only; provider-specific integration logic remains outside the business model.
+- `Contact`: customer or prospect with normalized phone number, optional email, and current CRM stage.
+- `Conversation` and `Message`: tenant-scoped WhatsApp conversation records with assigned user, message direction, message type, provider message id, and optional raw provider payload.
+- `CustomerEvent`: customer timeline for status changes, sales, payments, support events, AI notes, and internal notes.
+- `Sale` and `Payment`: source-of-truth commercial records. AI can suggest actions, but it must not invent these rows.
+- `SupportTicket`: support, configuration, and maintenance work with status and urgency.
+- `AIClassification`: advisory AI output with detected intent, urgency, confidence, summary, recommended action, and raw result JSON.
+- `Notification`: internal alerts assigned optionally to a user.
+- `AuditLog`: important changes with actor, action, entity, before/after JSON, and timestamp.
+
 ## Boundaries
 
 WhatsApp provider adapters should parse and normalize provider payloads, then hand off to application services. They should not contain CRM, support, payment, or reporting business logic.
