@@ -1,0 +1,23 @@
+{
+  "name": "jahf-comm",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.10.0",
+  "scripts": {
+    "dev": "pnpm --filter @jahf-comm/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @jahf-comm/db db:generate",
+    "db:migrate": "pnpm --filter @jahf-comm/db db:migrate",
+    "db:studio": "pnpm --filter @jahf-comm/db db:studio"
+  },
+  "devDependencies": {
+    "@eslint/js": "latest",
+    "@next/eslint-plugin-next": "latest",
+    "eslint": "latest",
+    "globals": "latest",
+    "typescript": "latest",
+    "typescript-eslint": "latest"
+  }
+}

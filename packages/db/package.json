@@ -1,0 +1,33 @@
+{
+  "name": "@jahf-comm/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "pnpm db:generate && tsc -p tsconfig.json",
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:studio": "prisma studio --schema prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "latest",
+    "@prisma/client": "latest",
+    "pg": "latest"
+  },
+  "devDependencies": {
+    "@types/pg": "latest",
+    "dotenv": "latest",
+    "prisma": "latest",
+    "typescript": "latest"
+  }
+}

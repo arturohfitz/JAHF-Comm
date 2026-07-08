@@ -1,0 +1,211 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ConversationChannel {
+  WHATSAPP
+}
+
+enum ConversationDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum SupportStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_ON_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum AiSuggestionKind {
+  CLASSIFICATION
+  SUMMARY
+  URGENCY
+  NEXT_ACTION
+}
+
+model Tenant {
+  id                      String                   @id @default(cuid())
+  name                    String
+  slug                    String                   @unique
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  users                   AppUser[]
+  contacts                Contact[]
+  conversations           Conversation[]
+  messages                Message[]
+  customerStatuses        CustomerStatus[]
+  supportTickets          SupportTicket[]
+  paymentRecords          PaymentRecord[]
+  auditLogs               AuditLog[]
+  aiClassificationResults AiClassificationResult[]
+}
+
+model AppUser {
+  id        String     @id @default(cuid())
+  tenantId  String
+  email     String
+  name      String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  auditLogs AuditLog[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+model Contact {
+  id            String         @id @default(cuid())
+  tenantId      String
+  displayName   String
+  phoneNumber   String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  tickets       SupportTicket[]
+  payments      PaymentRecord[]
+
+  @@unique([tenantId, phoneNumber])
+  @@index([tenantId])
+}
+
+model Conversation {
+  id                      String                   @id @default(cuid())
+  tenantId                String
+  contactId               String
+  channel                 ConversationChannel
+  status                  ConversationStatus       @default(OPEN)
+  externalConversationId  String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  tenant                  Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact                 Contact                  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  messages                Message[]
+  tickets                 SupportTicket[]
+  aiClassificationResults AiClassificationResult[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, contactId])
+  @@index([tenantId, externalConversationId])
+}
+
+model Message {
+  id                String                @id @default(cuid())
+  tenantId          String
+  conversationId    String
+  direction         ConversationDirection
+  externalMessageId String?
+  text              String?
+  sentAt            DateTime
+  createdAt         DateTime              @default(now())
+  tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, conversationId])
+  @@index([tenantId, externalMessageId])
+}
+
+model CustomerStatus {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model SupportTicket {
+  id             String        @id @default(cuid())
+  tenantId       String
+  contactId      String
+  conversationId String?
+  status         SupportStatus @default(OPEN)
+  title          String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact        Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([tenantId, contactId])
+}
+
+model PaymentRecord {
+  id          String        @id @default(cuid())
+  tenantId    String
+  contactId   String
+  status      PaymentStatus @default(PENDING)
+  amountCents Int
+  currency    String
+  reference   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact     Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([tenantId, contactId])
+  @@index([tenantId, reference])
+}
+
+model AiClassificationResult {
+  id             String           @id @default(cuid())
+  tenantId       String
+  conversationId String
+  kind           AiSuggestionKind
+  content        String
+  confidence     Float?
+  acceptedAt     DateTime?
+  rejectedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, conversationId])
+  @@index([tenantId, kind])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  actorUserId String?
+  entityType String
+  entityId   String
+  action     String
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor      AppUser? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, createdAt])
+}
