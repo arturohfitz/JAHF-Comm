@@ -18,13 +18,13 @@ import {
 import { MetricCard } from "@/components/app/metric-card";
 import { PageHeader } from "@/components/app/page-header";
 import { DataUnavailable } from "@/components/app/data-unavailable";
-import { getDemoSession } from "@/lib/demo-auth";
+import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   try {
-    const { tenant } = await getDemoSession();
+    const { tenant } = await requireAuth();
 
     const [
       totalContacts,

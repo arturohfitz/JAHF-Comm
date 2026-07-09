@@ -47,7 +47,7 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-white/10 p-4 text-xs leading-5 text-secondary-foreground/65">
-        Sesion demo temporal. El login real se implementara despues.
+        Acceso protegido por sesion web. Evolution usa secreto de webhook.
       </div>
     </aside>
   );

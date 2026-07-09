@@ -3,7 +3,7 @@ import { prisma } from "@jahf-comm/db";
 import { DataUnavailable } from "@/components/app/data-unavailable";
 import { PageHeader } from "@/components/app/page-header";
 import { humanizeEnum } from "@/lib/format";
-import { getDemoSession } from "@/lib/demo-auth";
+import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +39,7 @@ function ReportList({
 
 export default async function ReportsPage() {
   try {
-    const { tenant } = await getDemoSession();
+    const { tenant } = await requireAuth();
 
     const [
       contactsByStage,
@@ -83,7 +83,7 @@ export default async function ReportsPage() {
     return (
       <>
         <PageHeader
-          description="Resumen basico calculado desde datos reales del tenant demo."
+          description="Resumen basico calculado desde datos reales del tenant actual."
           title="Reportes"
         />
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
@@ -129,7 +129,7 @@ export default async function ReportsPage() {
     return (
       <>
         <PageHeader
-          description="Resumen basico calculado desde datos reales del tenant demo."
+          description="Resumen basico calculado desde datos reales del tenant actual."
           title="Reportes"
         />
         <DataUnavailable error={error} />

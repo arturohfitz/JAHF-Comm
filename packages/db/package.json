@@ -21,6 +21,7 @@
     "db:studio": "prisma studio --schema prisma/schema.prisma"
   },
   "dependencies": {
+    "@jahf-comm/shared": "workspace:*",
     "@prisma/adapter-pg": "latest",
     "@prisma/client": "latest",
     "dotenv": "latest",

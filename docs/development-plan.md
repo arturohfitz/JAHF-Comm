@@ -97,6 +97,29 @@ Still pending before production WhatsApp usage:
 - Add provider signature validation if available.
 - Add outbound sending, delivery status, retries, and operator controls.
 
+The objective of Step 9 is replacing the temporary demo session before publishing `comms.jahfconnect.com`. The web app now uses real email/password login, password hashes, database-backed `AuthSession` rows, and HTTP-only session cookies. The authenticated user's active tenant is resolved from `Membership`.
+
+Protected routes:
+
+- `/dashboard`
+- `/inbox`
+- `/contacts`
+- `/sales`
+- `/payments`
+- `/support`
+- `/reports`
+- `/settings`
+- `/settings/whatsapp`
+- `/settings/webhooks`
+
+Permission baseline:
+
+- `OWNER` and `ADMIN` can manage settings.
+- `OWNER`, `ADMIN`, and `AGENT` can perform inbox actions.
+- `VIEWER` remains read-only for current views.
+
+Local seed credentials come from `DEMO_ADMIN_EMAIL` and `DEMO_ADMIN_PASSWORD`. The local default password must be changed before any production deployment. Evolution webhooks continue to use `x-webhook-secret` and do not depend on browser login.
+
 ## Phase 5: Operations
 
 - Add production deployment configuration.

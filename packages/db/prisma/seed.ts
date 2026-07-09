@@ -1,4 +1,5 @@
 import { PrismaPg } from "@prisma/adapter-pg";
+import { hashPassword } from "@jahf-comm/shared/passwords";
 import {
   AIIntent,
   AuditAction,
@@ -30,6 +31,11 @@ if (!databaseUrl) {
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: databaseUrl })
 });
+
+const demoAdminEmail =
+  process.env.DEMO_ADMIN_EMAIL?.trim() || "admin@jahfcomm.local";
+const demoAdminPassword =
+  process.env.DEMO_ADMIN_PASSWORD?.trim() || "change-this-password";
 
 const demoContacts = [
   {
@@ -81,12 +87,20 @@ async function main() {
     }
   });
 
+  const adminPasswordHash = await hashPassword(demoAdminPassword);
+
   const adminUser = await prisma.user.upsert({
-    where: { email: "admin@jahf-demo.local" },
-    update: { name: "Admin Demo" },
+    where: { email: demoAdminEmail },
+    update: {
+      name: "Admin Demo",
+      passwordHash: adminPasswordHash,
+      emailVerifiedAt: new Date()
+    },
     create: {
-      email: "admin@jahf-demo.local",
-      name: "Admin Demo"
+      email: demoAdminEmail,
+      name: "Admin Demo",
+      passwordHash: adminPasswordHash,
+      emailVerifiedAt: new Date()
     }
   });
 

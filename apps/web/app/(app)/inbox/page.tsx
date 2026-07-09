@@ -13,7 +13,7 @@ import { DataUnavailable } from "@/components/app/data-unavailable";
 import { PageHeader } from "@/components/app/page-header";
 import { StatusBadge } from "@/components/app/status-badge";
 import { Button } from "@/components/ui/button";
-import { getDemoSession } from "@/lib/demo-auth";
+import { requireAuth } from "@/lib/auth";
 import { formatCurrency, formatDate, humanizeEnum } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -89,7 +89,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
   try {
     const params = await searchParams;
     const requestedConversationId = params?.conversationId;
-    const { tenant } = await getDemoSession();
+    const { tenant } = await requireAuth();
 
     const [conversations, memberships] = await Promise.all([
       prisma.conversation.findMany({
@@ -412,7 +412,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
               <div className="flex flex-1 items-center justify-center p-6">
                 <EmptyState>
                   {requestedConversationId
-                    ? "La conversacion seleccionada no existe o no pertenece al tenant demo."
+                    ? "La conversacion seleccionada no existe o no pertenece al tenant actual."
                     : "Selecciona una conversacion para ver el historial."}
                 </EmptyState>
               </div>

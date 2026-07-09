@@ -3,14 +3,14 @@ import { prisma } from "@jahf-comm/db";
 import { DataUnavailable } from "@/components/app/data-unavailable";
 import { PageHeader } from "@/components/app/page-header";
 import { StatusBadge } from "@/components/app/status-badge";
-import { getDemoSession } from "@/lib/demo-auth";
+import { requireAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function ContactsPage() {
   try {
-    const { tenant } = await getDemoSession();
+    const { tenant } = await requireAuth();
 
     const contacts = await prisma.contact.findMany({
       where: { tenantId: tenant.id },

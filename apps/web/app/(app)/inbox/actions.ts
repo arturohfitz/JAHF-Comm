@@ -5,12 +5,19 @@ import {
   ContactStage,
   ConversationStage,
   CustomerEventType,
+  MembershipRole,
   prisma
 } from "@jahf-comm/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { getDemoSession } from "@/lib/demo-auth";
+import { requireRole } from "@/lib/auth";
+
+const inboxActionRoles = [
+  MembershipRole.OWNER,
+  MembershipRole.ADMIN,
+  MembershipRole.AGENT
+] as const;
 
 function getString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -56,7 +63,7 @@ function redirectToConversation(conversationId: string) {
 }
 
 export async function updateContactStage(formData: FormData) {
-  const { tenant, user } = await getDemoSession();
+  const { tenant, user } = await requireRole(inboxActionRoles);
   const conversationId = getString(formData, "conversationId");
   const contactId = getString(formData, "contactId");
   const nextStage = getString(formData, "stage");
@@ -138,7 +145,7 @@ export async function updateContactStage(formData: FormData) {
 }
 
 export async function updateConversationStage(formData: FormData) {
-  const { tenant, user } = await getDemoSession();
+  const { tenant, user } = await requireRole(inboxActionRoles);
   const conversationId = getString(formData, "conversationId");
   const nextStage = getString(formData, "stage");
 
@@ -213,7 +220,7 @@ export async function updateConversationStage(formData: FormData) {
 }
 
 export async function updateConversationAssignee(formData: FormData) {
-  const { tenant, user } = await getDemoSession();
+  const { tenant, user } = await requireRole(inboxActionRoles);
   const conversationId = getString(formData, "conversationId");
   const rawAssignedUserId = getString(formData, "assignedUserId");
   const assignedUserId = rawAssignedUserId === "none" ? null : rawAssignedUserId;
@@ -250,7 +257,7 @@ export async function updateConversationAssignee(formData: FormData) {
     });
 
     if (!membership) {
-      throw new Error("Usuario no pertenece al tenant demo.");
+      throw new Error("Usuario no pertenece al tenant actual.");
     }
   }
 
@@ -307,7 +314,7 @@ export async function updateConversationAssignee(formData: FormData) {
 }
 
 export async function createInternalNote(formData: FormData) {
-  const { tenant, user } = await getDemoSession();
+  const { tenant, user } = await requireRole(inboxActionRoles);
   const conversationId = getString(formData, "conversationId");
   const contactId = getString(formData, "contactId");
   const note = getString(formData, "note").trim();
@@ -371,7 +378,7 @@ export async function createInternalNote(formData: FormData) {
 }
 
 export async function applyAiContactStageSuggestion(formData: FormData) {
-  const { tenant, user } = await getDemoSession();
+  const { tenant, user } = await requireRole(inboxActionRoles);
   const conversationId = getString(formData, "conversationId");
   const aiClassificationId = getString(formData, "aiClassificationId");
 
@@ -463,7 +470,7 @@ export async function applyAiContactStageSuggestion(formData: FormData) {
 }
 
 export async function applyAiConversationStageSuggestion(formData: FormData) {
-  const { tenant, user } = await getDemoSession();
+  const { tenant, user } = await requireRole(inboxActionRoles);
   const conversationId = getString(formData, "conversationId");
   const aiClassificationId = getString(formData, "aiClassificationId");
 

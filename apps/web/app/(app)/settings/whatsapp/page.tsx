@@ -1,19 +1,33 @@
 import { WhatsAppAccountStatus, prisma } from "@jahf-comm/db";
 
+import { AccessDenied } from "@/components/app/access-denied";
 import { DataUnavailable } from "@/components/app/data-unavailable";
 import { PageHeader } from "@/components/app/page-header";
 import { StatusBadge } from "@/components/app/status-badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/format";
-import { getDemoSession } from "@/lib/demo-auth";
+import { canManageSettings, requireAuth } from "@/lib/auth";
 
 import { updateWhatsAppAccountAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function WhatsAppSettingsPage() {
+  const { tenant, membership } = await requireAuth();
+
+  if (!canManageSettings(membership.role)) {
+    return (
+      <>
+        <PageHeader
+          description="Cuentas WhatsApp del tenant actual preparadas para recibir webhooks de Evolution API."
+          title="WhatsApp"
+        />
+        <AccessDenied />
+      </>
+    );
+  }
+
   try {
-    const { tenant } = await getDemoSession();
     const accounts = await prisma.whatsAppAccount.findMany({
       where: { tenantId: tenant.id },
       orderBy: { createdAt: "asc" },
@@ -34,7 +48,7 @@ export default async function WhatsAppSettingsPage() {
     return (
       <>
         <PageHeader
-          description="Cuentas WhatsApp del tenant demo preparadas para recibir webhooks de Evolution API."
+          description="Cuentas WhatsApp del tenant actual preparadas para recibir webhooks de Evolution API."
           title="WhatsApp"
         />
 
@@ -142,7 +156,7 @@ export default async function WhatsAppSettingsPage() {
     return (
       <>
         <PageHeader
-          description="Cuentas WhatsApp del tenant demo preparadas para recibir webhooks de Evolution API."
+          description="Cuentas WhatsApp del tenant actual preparadas para recibir webhooks de Evolution API."
           title="WhatsApp"
         />
         <DataUnavailable error={error} />

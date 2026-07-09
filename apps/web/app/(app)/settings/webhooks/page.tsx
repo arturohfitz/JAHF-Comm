@@ -1,10 +1,11 @@
 import { prisma } from "@jahf-comm/db";
 
+import { AccessDenied } from "@/components/app/access-denied";
 import { DataUnavailable } from "@/components/app/data-unavailable";
 import { PageHeader } from "@/components/app/page-header";
 import { StatusBadge } from "@/components/app/status-badge";
 import { formatDate } from "@/lib/format";
-import { getDemoSession } from "@/lib/demo-auth";
+import { canManageSettings, requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +18,21 @@ function formatRawPayload(value: unknown) {
 }
 
 export default async function WebhookLogsPage() {
+  const { tenant, membership } = await requireAuth();
+
+  if (!canManageSettings(membership.role)) {
+    return (
+      <>
+        <PageHeader
+          description="Diagnostico seguro de webhooks Evolution recibidos por la aplicacion."
+          title="Webhooks"
+        />
+        <AccessDenied />
+      </>
+    );
+  }
+
   try {
-    const { tenant } = await getDemoSession();
     const logs = await prisma.webhookLog.findMany({
       where: {
         OR: [{ tenantId: tenant.id }, { tenantId: null }]

@@ -3,14 +3,14 @@ import { prisma } from "@jahf-comm/db";
 import { DataUnavailable } from "@/components/app/data-unavailable";
 import { PageHeader } from "@/components/app/page-header";
 import { StatusBadge } from "@/components/app/status-badge";
-import { getDemoSession } from "@/lib/demo-auth";
+import { requireAuth } from "@/lib/auth";
 import { formatCurrency, formatDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function PaymentsPage() {
   try {
-    const { tenant } = await getDemoSession();
+    const { tenant } = await requireAuth();
 
     const payments = await prisma.payment.findMany({
       where: { tenantId: tenant.id },
@@ -30,7 +30,7 @@ export default async function PaymentsPage() {
     return (
       <>
         <PageHeader
-          description="Seguimiento inicial de pagos del tenant demo."
+          description="Seguimiento inicial de pagos del tenant actual."
           title="Pagos"
         />
         <section className="grid gap-3">
@@ -61,7 +61,7 @@ export default async function PaymentsPage() {
     return (
       <>
         <PageHeader
-          description="Seguimiento inicial de pagos del tenant demo."
+          description="Seguimiento inicial de pagos del tenant actual."
           title="Pagos"
         />
         <DataUnavailable error={error} />

@@ -2,6 +2,7 @@
 
 import {
   AuditAction,
+  MembershipRole,
   type Prisma,
   prisma,
   WhatsAppAccountStatus
@@ -9,7 +10,7 @@ import {
 import { normalizePhoneNumber } from "@jahf-comm/whatsapp";
 import { revalidatePath } from "next/cache";
 
-import { getDemoSession } from "@/lib/demo-auth";
+import { requireRole } from "@/lib/auth";
 
 function readFormString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -34,7 +35,10 @@ function parseStatus(value: string) {
 }
 
 export async function updateWhatsAppAccountAction(formData: FormData) {
-  const { tenant, user } = await getDemoSession();
+  const { tenant, user } = await requireRole([
+    MembershipRole.OWNER,
+    MembershipRole.ADMIN
+  ]);
   const accountId = readFormString(formData, "accountId");
   const displayName = readFormString(formData, "displayName");
   const phoneNumber = readFormString(formData, "phoneNumber");

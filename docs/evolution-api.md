@@ -40,6 +40,8 @@ x-webhook-secret: <WEBHOOK_SECRET>
 
 El sistema no guarda headers ni secretos en `WebhookLog`.
 
+Este webhook no usa la sesion web de `/login`. Evolution API se autentica solamente con `x-webhook-secret`, para que la recepcion de mensajes siga funcionando aunque no haya un usuario humano conectado.
+
 ## Resolucion de instancia
 
 El payload de Evolution debe traer `instance`, `instanceName` o `instanceId`. Ese valor debe coincidir con `WhatsAppAccount.instanceName`, `WhatsAppAccount.providerInstanceId` o el campo legacy `providerAccountId`.

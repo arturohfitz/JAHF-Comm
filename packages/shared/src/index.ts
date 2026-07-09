@@ -20,3 +20,4 @@ export type {
   AiClassificationJobName,
   AiClassificationJobPayload
 } from "./queues";
+export { hashPassword, verifyPassword } from "./passwords";

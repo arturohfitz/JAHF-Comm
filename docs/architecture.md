@@ -20,10 +20,26 @@ Tenant isolation is a primary invariant. Tenant-owned tables include `tenantId`,
 
 The Step 2 database model reinforces this by making business records tenant scoped and by using composite relations such as `[tenantId, contactId]`, `[tenantId, conversationId]`, and `[tenantId, whatsappAccountId]`. This keeps contacts, conversations, messages, sales, payments, support tickets, AI classifications, notifications, customer timeline events, and audit logs attached to the same tenant boundary.
 
+## Authentication
+
+Step 9 replaces the development-only demo session with real credentials and database-backed web sessions. JAHF Comm uses a small first-party session layer instead of OAuth at this stage: `/login` verifies the user's password hash, creates an `AuthSession` row, and sets an HTTP-only cookie containing only a random session token. The database stores a SHA-256 hash of that token and an expiration timestamp.
+
+Passwords are hashed with Node `scrypt` through `packages/shared/passwords`. `User.passwordHash` never stores plain text. `User.emailVerifiedAt` and `User.lastLoginAt` prepare the model for production account lifecycle work.
+
+The active tenant is resolved from `Membership`. For this stage, if a user has access to one or more tenants, the first membership is used automatically; a tenant selector can be added later. Protected app routes redirect unauthenticated requests to `/login`.
+
+Role boundaries:
+
+- `OWNER` and `ADMIN`: settings and inbox operations.
+- `AGENT`: inbox operations.
+- `VIEWER`: read-only access to reporting and current read pages.
+
+The Evolution webhook is intentionally separate from browser sessions. `POST /api/webhooks/evolution` continues to authenticate with `x-webhook-secret`, not a user session.
+
 ## Data Model
 
 - `Tenant`: company using JAHF Comm.
-- `User` and `Membership`: global user identity plus tenant membership and role (`OWNER`, `ADMIN`, `AGENT`, `VIEWER`).
+- `User`, `AuthSession`, and `Membership`: global user identity, credential/session state, tenant membership, and role (`OWNER`, `ADMIN`, `AGENT`, `VIEWER`).
 - `WhatsAppAccount`: tenant-owned WhatsApp number or instance. It stores provider identity, `instanceName`, `providerInstanceId`, phone, display name, and connection status only; provider-specific integration logic remains outside the business model.
 - `Contact`: customer or prospect with normalized phone number, optional email, and current CRM stage.
 - `Conversation` and `Message`: tenant-scoped WhatsApp conversation records with assigned user, message direction, message type, provider message id, and optional raw provider payload.
@@ -101,7 +117,7 @@ Evolution API real
 
 Configuration and diagnostics:
 
-- `/settings/whatsapp`: shows and edits tenant demo WhatsApp accounts. Updates create `AuditLog`.
+- `/settings/whatsapp`: shows and edits tenant actual WhatsApp accounts. Updates create `AuditLog`.
 - `/settings/webhooks`: shows recent `WebhookLog` records and safe formatted payloads without headers or secrets.
 - `docs/evolution-api.md`: documents environment variables, local and production webhook URLs, required header, instance matching, and simulator usage.
 

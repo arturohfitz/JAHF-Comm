@@ -43,6 +43,15 @@ docs              Architecture and planning notes
    cp .env.example .env
    ```
 
+   For local login, the seed reads:
+
+   ```bash
+   DEMO_ADMIN_EMAIL="admin@jahfcomm.local"
+   DEMO_ADMIN_PASSWORD="change-this-password"
+   ```
+
+   Change the demo password before any production deployment. Passwords are stored as hashes, never as plain text.
+
 3. Start local infrastructure:
 
    ```bash
@@ -73,3 +82,9 @@ docs              Architecture and planning notes
 - `pnpm webhook:simulate` posts local Evolution-style webhook test cases.
 - `pnpm worker:dev` starts the local BullMQ worker.
 - `pnpm queue:test` enqueues/checks a demo AI classification job.
+
+## Authentication
+
+The web app uses an HTTP-only session cookie backed by the `AuthSession` table. The cookie stores only a random session token; PostgreSQL stores a hash of that token. The active tenant is resolved from the authenticated user's first `Membership`.
+
+Protected web routes redirect unauthenticated users to `/login`. Settings routes require `OWNER` or `ADMIN`; inbox actions allow `OWNER`, `ADMIN`, and `AGENT`. The Evolution webhook remains separate from browser sessions and uses `x-webhook-secret`.

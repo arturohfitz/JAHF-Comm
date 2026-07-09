@@ -1,18 +1,31 @@
 import { prisma } from "@jahf-comm/db";
 import Link from "next/link";
 
+import { AccessDenied } from "@/components/app/access-denied";
 import { DataUnavailable } from "@/components/app/data-unavailable";
 import { PageHeader } from "@/components/app/page-header";
 import { StatusBadge } from "@/components/app/status-badge";
+import { canManageSettings, requireAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
-import { getDemoSession } from "@/lib/demo-auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  try {
-    const { tenant } = await getDemoSession();
+  const { tenant, membership } = await requireAuth();
 
+  if (!canManageSettings(membership.role)) {
+    return (
+      <>
+        <PageHeader
+          description="Configuracion del tenant actual."
+          title="Configuracion"
+        />
+        <AccessDenied />
+      </>
+    );
+  }
+
+  try {
     const accounts = await prisma.whatsAppAccount.findMany({
       where: { tenantId: tenant.id },
       orderBy: { createdAt: "asc" },
@@ -32,7 +45,7 @@ export default async function SettingsPage() {
     return (
       <>
         <PageHeader
-          description="Configuracion inicial del tenant demo. No hay integracion real de WhatsApp en este paso."
+          description="Configuracion inicial del tenant actual. No hay integracion real de WhatsApp en este paso."
           title="Configuracion"
         />
         <section className="mb-5 grid gap-3 md:grid-cols-2">
@@ -83,7 +96,7 @@ export default async function SettingsPage() {
     return (
       <>
         <PageHeader
-          description="Configuracion inicial del tenant demo. No hay integracion real de WhatsApp en este paso."
+          description="Configuracion inicial del tenant actual. No hay integracion real de WhatsApp en este paso."
           title="Configuracion"
         />
         <DataUnavailable error={error} />
