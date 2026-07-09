@@ -70,6 +70,33 @@ The worker is idempotent by `messageId`: if an `AIClassification` already exists
 
 Production follow-up: add queue dashboards, dead-letter review, observability, stricter provider signature validation, and horizontal worker scaling.
 
+The objective of Step 8 is preparing real Evolution API reception without sending WhatsApp messages or automating replies. `WhatsAppAccount` now stores explicit `instanceName` and `providerInstanceId` values, and `WebhookLog` records inbound webhook diagnostics with `RECEIVED`, `PROCESSED`, `DUPLICATE`, `FAILED`, and `UNAUTHORIZED` states.
+
+The inbound flow is:
+
+1. Evolution API posts to `/api/webhooks/evolution`.
+2. The webhook validates `x-webhook-secret`.
+3. A safe `WebhookLog` is created or updated.
+4. The app resolves `WhatsAppAccount` by Evolution instance.
+5. New inbound messages create or update tenant-scoped contacts, conversations, messages, events, notifications, and audit logs.
+6. New messages enqueue BullMQ AI classification jobs.
+7. `apps/worker` processes AI suggestions.
+8. `/inbox` shows the message and classification state.
+
+Step 8 also adds:
+
+- `/settings/whatsapp` to view and edit demo WhatsApp account configuration.
+- `/settings/webhooks` to inspect recent webhook logs and raw payloads safely.
+- `docs/evolution-api.md` with local and production webhook instructions for `https://comms.jahfconnect.com/api/webhooks/evolution`.
+- `pnpm webhook:simulate` coverage for valid, duplicate, unauthorized, unknown-instance, and inbox-message cases.
+
+Still pending before production WhatsApp usage:
+
+- Configure a real Evolution instance outside Git.
+- Store production secrets in the deployment environment.
+- Add provider signature validation if available.
+- Add outbound sending, delivery status, retries, and operator controls.
+
 ## Phase 5: Operations
 
 - Add production deployment configuration.

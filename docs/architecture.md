@@ -24,7 +24,7 @@ The Step 2 database model reinforces this by making business records tenant scop
 
 - `Tenant`: company using JAHF Comm.
 - `User` and `Membership`: global user identity plus tenant membership and role (`OWNER`, `ADMIN`, `AGENT`, `VIEWER`).
-- `WhatsAppAccount`: tenant-owned WhatsApp number or instance. It stores provider identity and connection status only; provider-specific integration logic remains outside the business model.
+- `WhatsAppAccount`: tenant-owned WhatsApp number or instance. It stores provider identity, `instanceName`, `providerInstanceId`, phone, display name, and connection status only; provider-specific integration logic remains outside the business model.
 - `Contact`: customer or prospect with normalized phone number, optional email, and current CRM stage.
 - `Conversation` and `Message`: tenant-scoped WhatsApp conversation records with assigned user, message direction, message type, provider message id, and optional raw provider payload.
 - `CustomerEvent`: customer timeline for status changes, sales, payments, support events, AI notes, and internal notes.
@@ -33,6 +33,7 @@ The Step 2 database model reinforces this by making business records tenant scop
 - `AIClassification`: advisory AI output with detected intent, urgency, confidence, summary, recommended action, and raw result JSON.
 - `Notification`: internal alerts assigned optionally to a user.
 - `AuditLog`: important changes with actor, action, entity, before/after JSON, and timestamp.
+- `WebhookLog`: safe diagnostic log for inbound provider webhooks. It records provider, instance, message id, status, HTTP status, optional error, raw payload, and optional tenant/account links. It never stores webhook secrets.
 
 ## Boundaries
 
@@ -78,13 +79,31 @@ pnpm queue:test
 
 ## Evolution Webhook Ingestion
 
-Step 5 adds an inbound-only Evolution-style webhook at `POST /api/webhooks/evolution`. The endpoint validates `x-webhook-secret`, parses JSON, normalizes the provider payload through `packages/whatsapp`, resolves the tenant-owned `WhatsAppAccount`, and writes source-of-truth inbound data to PostgreSQL.
+Step 8 prepares real inbound Evolution API reception at `POST /api/webhooks/evolution`. The endpoint validates `x-webhook-secret`, records a `WebhookLog`, parses JSON, normalizes the provider payload through `packages/whatsapp`, resolves the tenant-owned `WhatsAppAccount` by `instanceName`, `providerInstanceId`, or legacy `providerAccountId`, and writes source-of-truth inbound data to PostgreSQL.
 
 The reusable WhatsApp adapter lives under `packages/whatsapp/src/providers/evolution.ts`. It extracts the provider message id, sender phone, target phone or instance id, contact name, message text, message type, timestamp, and raw payload. Phone numbers are normalized into `+` plus digits, while provider-specific payload shape stays outside CRM code.
 
-The webhook uses existing database fields. `WhatsAppAccount.providerAccountId` identifies the Evolution instance, and `Message.providerMessageId` prevents duplicate inbound messages per tenant. No schema migration is required for this step.
+`Message.providerMessageId` prevents duplicate inbound messages per tenant. Duplicate events update `WebhookLog` to `DUPLICATE` and do not enqueue AI. Unauthorized events are logged as `UNAUTHORIZED`. Unknown explicit instances are logged as `FAILED`; the development demo fallback only applies when the payload does not include an instance and `EVOLUTION_ALLOW_DEMO_FALLBACK=true`.
 
-For each non-duplicate inbound message, the app creates or updates a tenant-scoped `Contact`, creates or reuses an open `Conversation`, creates an inbound `Message`, updates `Conversation.lastMessageAt`, creates a timeline `CustomerEvent`, creates an internal `Notification`, and records an `AuditLog` for message creation. AI classification and real message sending remain separate future workflows.
+For each non-duplicate inbound message, the app creates or updates a tenant-scoped `Contact`, creates or reuses an open `Conversation`, creates an inbound `Message`, updates `Conversation.lastMessageAt`, creates a timeline `CustomerEvent`, creates an internal `Notification`, and records an `AuditLog` for message creation. Then it enqueues AI classification in BullMQ; `apps/worker` consumes the job and writes `AIClassification`.
+
+The production flow is:
+
+```text
+Evolution API real
+-> public webhook
+-> WebhookLog
+-> Contact / Conversation / Message
+-> BullMQ
+-> apps/worker AI
+-> Inbox
+```
+
+Configuration and diagnostics:
+
+- `/settings/whatsapp`: shows and edits tenant demo WhatsApp accounts. Updates create `AuditLog`.
+- `/settings/webhooks`: shows recent `WebhookLog` records and safe formatted payloads without headers or secrets.
+- `docs/evolution-api.md`: documents environment variables, local and production webhook URLs, required header, instance matching, and simulator usage.
 
 Local testing is done with:
 
@@ -92,7 +111,7 @@ Local testing is done with:
 pnpm webhook:simulate
 ```
 
-The simulator posts four local Evolution-style payloads to the webhook: a new price inquiry, an existing support contact, an existing pending-payment contact, and a duplicate provider message id.
+The simulator posts local Evolution-style payloads for a valid message, duplicate message, invalid secret, unknown instance, and a valid inbox message.
 
 ## Demo Session
 

@@ -2,7 +2,7 @@
 
 JAHF Comm is a multi-tenant SaaS foundation for WhatsApp conversation management, CRM statuses, AI-assisted classification, support tracking, payments tracking, and reports.
 
-This first version is intentionally technical foundation only. It does not implement WhatsApp provider integrations, OpenAI integrations, webhook ingestion, or business workflows.
+This version is still an early technical foundation. It includes local CRM views, demo data, inbound Evolution webhook preparation, safe webhook logs, and background AI classification scaffolding. It does not send real WhatsApp messages, automate replies, or require real OpenAI calls.
 
 ## Stack
 
@@ -70,3 +70,6 @@ docs              Architecture and planning notes
 - `pnpm db:generate` generates the Prisma client.
 - `pnpm db:migrate` runs local Prisma migrations.
 - `pnpm db:studio` opens Prisma Studio.
+- `pnpm webhook:simulate` posts local Evolution-style webhook test cases.
+- `pnpm worker:dev` starts the local BullMQ worker.
+- `pnpm queue:test` enqueues/checks a demo AI classification job.

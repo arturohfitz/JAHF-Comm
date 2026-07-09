@@ -102,11 +102,14 @@ async function main() {
     data: {
       tenantId: tenant.id,
       name: "WhatsApp Demo",
+      displayName: "WhatsApp Demo",
       phoneNumber: "55 0000 0000",
       normalizedPhoneNumber: "+525500000000",
       provider: WhatsAppProvider.EVOLUTION,
       status: WhatsAppAccountStatus.CONNECTED,
-      providerAccountId: "demo-evolution-instance"
+      providerAccountId: "demo-evolution-instance",
+      providerInstanceId: "demo-evolution-instance",
+      instanceName: "demo-evolution-instance"
     }
   });
 

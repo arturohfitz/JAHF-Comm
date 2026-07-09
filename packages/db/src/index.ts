@@ -49,6 +49,7 @@ export {
   SaleStatus,
   SupportStatus,
   Urgency,
+  WebhookLogStatus,
   WhatsAppAccountStatus,
   WhatsAppProvider
 } from "@prisma/client";

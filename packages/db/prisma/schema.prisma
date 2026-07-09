@@ -140,6 +140,14 @@ enum CustomerEventType {
   NOTIFICATION_CREATED
 }
 
+enum WebhookLogStatus {
+  RECEIVED
+  PROCESSED
+  DUPLICATE
+  FAILED
+  UNAUTHORIZED
+}
+
 model Tenant {
   id                  String                @id @default(cuid())
   name                String
@@ -158,6 +166,7 @@ model Tenant {
   aiClassifications   AIClassification[]
   notifications       Notification[]
   auditLogs           AuditLog[]
+  webhookLogs         WebhookLog[]
 
   @@index([createdAt])
 }
@@ -200,24 +209,31 @@ model WhatsAppAccount {
   id                    String                @id @default(cuid())
   tenantId              String
   name                  String
+  displayName           String?
   phoneNumber           String
   normalizedPhoneNumber String
   provider              WhatsAppProvider
   status                WhatsAppAccountStatus @default(PENDING)
   providerAccountId     String?
+  providerInstanceId    String?
+  instanceName          String?
   providerMetadata      Json?
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
   tenant                Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   conversations         Conversation[]
   messages              Message[]
+  webhookLogs           WebhookLog[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, normalizedPhoneNumber])
+  @@unique([tenantId, provider, providerInstanceId])
+  @@unique([tenantId, provider, instanceName])
   @@index([tenantId])
   @@index([tenantId, phoneNumber])
   @@index([tenantId, provider])
   @@index([tenantId, status])
+  @@index([tenantId, provider, providerAccountId])
   @@index([tenantId, createdAt])
 }
 
@@ -494,4 +510,29 @@ model AuditLog {
   @@index([tenantId, action])
   @@index([tenantId, entityType, entityId])
   @@index([tenantId, createdAt])
+}
+
+model WebhookLog {
+  id                 String           @id @default(cuid())
+  tenantId           String?
+  whatsappAccountId  String?
+  provider           WhatsAppProvider
+  eventType          String?
+  providerInstanceId String?
+  providerMessageId  String?
+  status             WebhookLogStatus
+  httpStatus         Int
+  errorMessage       String?
+  rawPayload         Json?
+  createdAt          DateTime         @default(now())
+  tenant             Tenant?          @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  whatsappAccount    WhatsAppAccount? @relation(fields: [whatsappAccountId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([whatsappAccountId])
+  @@index([provider])
+  @@index([provider, providerInstanceId])
+  @@index([providerMessageId])
+  @@index([status])
+  @@index([createdAt])
 }
