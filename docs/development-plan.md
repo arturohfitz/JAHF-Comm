@@ -120,6 +120,21 @@ Permission baseline:
 
 Local seed credentials come from `DEMO_ADMIN_EMAIL` and `DEMO_ADMIN_PASSWORD`. The local default password must be changed before any production deployment. Evolution webhooks continue to use `x-webhook-secret` and do not depend on browser login.
 
+The objective of Step 10 is production deployment preparation, not VPS deployment itself. This step adds Docker images for the web app and worker, a production Compose file, a production environment example, an environment validator, a health endpoint, and a script to create the first production owner account after migrations.
+
+Production preparation includes:
+
+- `Dockerfile.web` for the Next.js runtime.
+- `Dockerfile.worker` for the BullMQ worker runtime.
+- `docker-compose.production.yml` for web, worker, PostgreSQL, and Redis.
+- `.env.production.example` with placeholders only.
+- `GET /api/health` for PostgreSQL and Redis checks.
+- `pnpm production:check` to validate required production variables.
+- `pnpm production:migrate` to apply Prisma migrations.
+- `pnpm production:seed-admin` to create the first owner without running demo seed data.
+
+Production must keep secrets in the deployment environment, not in Git. Demo fallbacks and `change-this-password` are invalid for production.
+
 ## Phase 5: Operations
 
 - Add production deployment configuration.

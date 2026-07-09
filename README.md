@@ -17,6 +17,13 @@ This version is still an early technical foundation. It includes local CRM views
 - pnpm workspaces
 - Docker Compose for local services
 
+## Environments
+
+- `docker-compose.yml` is for local development. It starts PostgreSQL and Redis on local ports so the web app and worker can run from pnpm.
+- `docker-compose.production.yml` is for production-style deployment. It builds the web and worker containers, keeps PostgreSQL and Redis on persistent Docker volumes, and reads secrets from `.env.production`.
+- `.env.example` is safe local reference material.
+- `.env.production.example` is the production reference template. Copy it on the server and fill real values there; never commit `.env.production`.
+
 ## Workspace
 
 ```text
@@ -70,6 +77,36 @@ docs              Architecture and planning notes
    pnpm dev
    ```
 
+6. Run the background worker when testing async AI classification:
+
+   ```bash
+   pnpm worker:dev
+   ```
+
+## Production Preparation
+
+Production deployment is documented in [docs/deployment.md](docs/deployment.md). The expected public domain is:
+
+```text
+https://comms.jahfconnect.com
+```
+
+Before starting production containers, configure real environment variables outside Git:
+
+```bash
+cp .env.production.example .env.production
+NODE_ENV=production pnpm production:check
+```
+
+After building and starting services, run migrations and create the first owner account:
+
+```bash
+pnpm production:migrate
+pnpm production:seed-admin
+```
+
+The production admin script requires `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_TENANT_NAME`, and `ADMIN_TENANT_SLUG`. It hashes the password and does not print secrets.
+
 ## Root Scripts
 
 - `pnpm dev` starts the web app.
@@ -82,9 +119,23 @@ docs              Architecture and planning notes
 - `pnpm webhook:simulate` posts local Evolution-style webhook test cases.
 - `pnpm worker:dev` starts the local BullMQ worker.
 - `pnpm queue:test` enqueues/checks a demo AI classification job.
+- `pnpm production:check` validates required production environment variables.
+- `pnpm production:migrate` runs Prisma migrations for deployment.
+- `pnpm production:seed-admin` creates or updates the first production owner account.
+- `pnpm production:build` builds all workspace packages for production.
 
 ## Authentication
 
-The web app uses an HTTP-only session cookie backed by the `AuthSession` table. The cookie stores only a random session token; PostgreSQL stores a hash of that token. The active tenant is resolved from the authenticated user's first `Membership`.
+The web app uses an HTTP-only session cookie backed by the `AuthSession` table. The cookie stores only a random session token; PostgreSQL stores a secret-keyed hash of that token. In production, `SESSION_SECRET` is required. The active tenant is resolved from the authenticated user's first `Membership`.
 
 Protected web routes redirect unauthenticated users to `/login`. Settings routes require `OWNER` or `ADMIN`; inbox actions allow `OWNER`, `ADMIN`, and `AGENT`. The Evolution webhook remains separate from browser sessions and uses `x-webhook-secret`.
+
+## Healthcheck
+
+The web app exposes a production-safe health endpoint:
+
+```text
+GET /api/health
+```
+
+It checks PostgreSQL and Redis connectivity and returns `200` only when both are reachable. It does not expose secrets.

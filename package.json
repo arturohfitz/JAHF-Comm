@@ -17,7 +17,11 @@
     "worker:dev": "pnpm --filter @jahf-comm/worker dev",
     "worker:start": "pnpm --filter @jahf-comm/worker start",
     "dev:all": "concurrently -n web,worker -c cyan,magenta \"pnpm dev\" \"pnpm worker:dev\"",
-    "queue:test": "pnpm --filter @jahf-comm/worker queue:test"
+    "queue:test": "pnpm --filter @jahf-comm/worker queue:test",
+    "production:migrate": "pnpm db:migrate",
+    "production:seed-admin": "pnpm --filter @jahf-comm/db production:seed-admin",
+    "production:build": "pnpm build",
+    "production:check": "node scripts/validate-production-env.mjs"
   },
   "devDependencies": {
     "@eslint/js": "latest",

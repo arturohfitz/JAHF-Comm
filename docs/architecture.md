@@ -22,7 +22,7 @@ The Step 2 database model reinforces this by making business records tenant scop
 
 ## Authentication
 
-Step 9 replaces the development-only demo session with real credentials and database-backed web sessions. JAHF Comm uses a small first-party session layer instead of OAuth at this stage: `/login` verifies the user's password hash, creates an `AuthSession` row, and sets an HTTP-only cookie containing only a random session token. The database stores a SHA-256 hash of that token and an expiration timestamp.
+Step 9 replaces the development-only demo session with real credentials and database-backed web sessions. JAHF Comm uses a small first-party session layer instead of OAuth at this stage: `/login` verifies the user's password hash, creates an `AuthSession` row, and sets an HTTP-only cookie containing only a random session token. The database stores a secret-keyed hash of that token and an expiration timestamp. `SESSION_SECRET` is required in production.
 
 Passwords are hashed with Node `scrypt` through `packages/shared/passwords`. `User.passwordHash` never stores plain text. `User.emailVerifiedAt` and `User.lastLoginAt` prepare the model for production account lifecycle work.
 
@@ -129,6 +129,15 @@ pnpm webhook:simulate
 
 The simulator posts local Evolution-style payloads for a valid message, duplicate message, invalid secret, unknown instance, and a valid inbox message.
 
-## Demo Session
+## Production Runtime
 
-The current web app uses a temporary development-only session helper that always resolves the `jahf-demo` tenant and the demo admin user created by the Prisma seed. This is not production authentication. Real login, tenant selection, authorization, and session management should replace it before any production workflow is enabled.
+Step 10 prepares the production runtime without deploying to the server from this workspace. The production shape is four services:
+
+- `web`: Next.js App Router app on port `3000`.
+- `worker`: BullMQ worker for queued AI classification jobs.
+- `postgres`: PostgreSQL with persistent volume storage.
+- `redis`: Redis with persistent queue storage.
+
+Production Docker images are defined by `Dockerfile.web` and `Dockerfile.worker`. `docker-compose.production.yml` wires the services together and reads secrets from `.env.production`, which must stay outside Git. `scripts/validate-production-env.mjs` verifies required production variables before deployment, and `packages/db/scripts/create-admin.ts` creates the first owner account from environment variables after migrations.
+
+The production health endpoint is `GET /api/health`. It checks PostgreSQL and Redis and returns `503` if either dependency is unreachable. It does not expose secrets.

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 
 import { MembershipRole, prisma } from "@jahf-comm/db";
 import { cookies } from "next/headers";
@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 
 export const sessionCookieName = "jahf_comm_session";
 const sessionDurationMs = 7 * 24 * 60 * 60 * 1000;
+const developmentSessionSecret = "development-session-secret";
 
 export type CurrentSession = {
   user: {
@@ -24,8 +25,24 @@ export type CurrentSession = {
   };
 };
 
+function getSessionSecret() {
+  const secret = process.env.SESSION_SECRET;
+
+  if (secret) {
+    return secret;
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    return developmentSessionSecret;
+  }
+
+  throw new Error("SESSION_SECRET is required in production.");
+}
+
 function hashSessionToken(token: string) {
-  return createHash("sha256").update(token).digest("base64url");
+  return createHmac("sha256", getSessionSecret())
+    .update(token)
+    .digest("base64url");
 }
 
 function getCookieOptions(expires: Date) {

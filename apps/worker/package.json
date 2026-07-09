@@ -17,11 +17,11 @@
     "@jahf-comm/db": "workspace:*",
     "@jahf-comm/shared": "workspace:*",
     "bullmq": "latest",
-    "ioredis": "latest"
+    "ioredis": "latest",
+    "tsx": "latest"
   },
   "devDependencies": {
     "@types/node": "latest",
-    "tsx": "latest",
     "typescript": "latest"
   }
 }
