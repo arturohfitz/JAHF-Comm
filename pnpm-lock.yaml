@@ -29,6 +29,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@jahf-comm/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@jahf-comm/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -112,6 +115,9 @@ importers:
       '@prisma/client':
         specifier: latest
         version: 7.8.0(prisma@7.8.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@6.0.3))(typescript@6.0.3)
+      dotenv:
+        specifier: latest
+        version: 17.4.2
       pg:
         specifier: latest
         version: 8.22.0
@@ -119,9 +125,6 @@ importers:
       '@types/pg':
         specifier: latest
         version: 8.20.0
-      dotenv:
-        specifier: latest
-        version: 17.4.2
       prisma:
         specifier: latest
         version: 7.8.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@6.0.3)

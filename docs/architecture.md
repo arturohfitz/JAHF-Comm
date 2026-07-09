@@ -41,3 +41,7 @@ WhatsApp provider adapters should parse and normalize provider payloads, then ha
 AI classification should run separately from webhook ingestion. AI output is advisory only and must be stored as suggestions, not as invented source-of-truth sales, warranty, support, or payment records.
 
 Critical status changes must be paired with audit log records that include tenant, actor, entity, action, and change metadata.
+
+## Demo Session
+
+The current web app uses a temporary development-only session helper that always resolves the `jahf-demo` tenant and the demo admin user created by the Prisma seed. This is not production authentication. Real login, tenant selection, authorization, and session management should replace it before any production workflow is enabled.

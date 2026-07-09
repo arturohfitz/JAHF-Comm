@@ -1,5 +1,3 @@
-import { resolve } from "node:path";
-
 import { PrismaPg } from "@prisma/adapter-pg";
 import {
   AIIntent,
@@ -21,7 +19,7 @@ import {
 } from "@prisma/client";
 import { config } from "dotenv";
 
-config({ path: resolve(import.meta.dirname, "../../.env") });
+config({ path: [".env", "../.env", "../../.env", "../../../.env"] });
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -72,10 +70,12 @@ const demoContacts = [
 ] as const;
 
 async function main() {
-  const tenant = await prisma.tenant.upsert({
-    where: { slug: "jahf-demo" },
-    update: { name: "JAHF Demo" },
-    create: {
+  await prisma.tenant.deleteMany({
+    where: { slug: "jahf-demo" }
+  });
+
+  const tenant = await prisma.tenant.create({
+    data: {
       name: "JAHF Demo",
       slug: "jahf-demo"
     }
@@ -90,33 +90,16 @@ async function main() {
     }
   });
 
-  await prisma.membership.upsert({
-    where: {
-      tenantId_userId: {
-        tenantId: tenant.id,
-        userId: adminUser.id
-      }
-    },
-    update: { role: MembershipRole.OWNER },
-    create: {
+  await prisma.membership.create({
+    data: {
       tenantId: tenant.id,
       userId: adminUser.id,
       role: MembershipRole.OWNER
     }
   });
 
-  const whatsappAccount = await prisma.whatsAppAccount.upsert({
-    where: {
-      tenantId_normalizedPhoneNumber: {
-        tenantId: tenant.id,
-        normalizedPhoneNumber: "+525500000000"
-      }
-    },
-    update: {
-      name: "WhatsApp Demo",
-      status: WhatsAppAccountStatus.CONNECTED
-    },
-    create: {
+  const whatsappAccount = await prisma.whatsAppAccount.create({
+    data: {
       tenantId: tenant.id,
       name: "WhatsApp Demo",
       phoneNumber: "55 0000 0000",
@@ -131,20 +114,8 @@ async function main() {
 
   for (const contact of demoContacts) {
     contacts.push(
-      await prisma.contact.upsert({
-        where: {
-          tenantId_normalizedPhoneNumber: {
-            tenantId: tenant.id,
-            normalizedPhoneNumber: contact.normalizedPhoneNumber
-          }
-        },
-        update: {
-          name: contact.name,
-          phoneNumber: contact.phoneNumber,
-          email: contact.email,
-          stage: contact.stage
-        },
-        create: {
+      await prisma.contact.create({
+        data: {
           tenantId: tenant.id,
           ...contact
         }

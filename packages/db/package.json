@@ -23,11 +23,11 @@
   "dependencies": {
     "@prisma/adapter-pg": "latest",
     "@prisma/client": "latest",
+    "dotenv": "latest",
     "pg": "latest"
   },
   "devDependencies": {
     "@types/pg": "latest",
-    "dotenv": "latest",
     "prisma": "latest",
     "tsx": "latest",
     "typescript": "latest"
