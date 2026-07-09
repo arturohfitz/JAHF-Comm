@@ -722,7 +722,11 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                     <h3 className="text-sm font-semibold">Ultima IA</h3>
                   </div>
                   {!lastAiClassification ? (
-                    <EmptyState>No hay clasificacion IA registrada.</EmptyState>
+                    <EmptyState>
+                      {selectedConversation.messages.length > 0
+                        ? "Clasificacion IA pendiente"
+                        : "No hay clasificacion IA registrada."}
+                    </EmptyState>
                   ) : (
                     <div className="space-y-3 rounded-md border p-3 text-sm">
                       <p className="text-xs font-medium uppercase text-muted-foreground">

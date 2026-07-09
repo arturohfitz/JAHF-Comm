@@ -50,7 +50,9 @@ The classifier returns a structured object with intent, urgency, confidence, sta
 
 If `OPENAI_API_KEY` is missing in development, JAHF Comm uses a controlled mock classifier. The mock is recorded in `AIClassification.rawResult.metadata.mode`, so tests and logs can distinguish it from real OpenAI classification without adding mock wording to the agent-facing UI.
 
-The Evolution webhook runs classification after saving an inbound message. It stores the result in `AIClassification`, creates a `CustomerEvent` of type `AI_CLASSIFIED`, optionally creates a `Notification`, and records an `AuditLog`. It does not automatically change `ContactStage`, `ConversationStage`, sales, payments, warranty, or support data. `/inbox` shows suggestions and lets the user manually apply suggested stages; those user-applied changes create the same audit trail as manual changes, with metadata pointing back to the AI classification.
+The Evolution webhook enqueues classification after saving an inbound message. The flow is `webhook -> BullMQ ai-classification queue -> apps/worker -> AIClassification`. The worker stores the result in `AIClassification`, creates a `CustomerEvent` of type `AI_CLASSIFIED`, optionally creates a `Notification`, and records an `AuditLog`. It does not automatically change `ContactStage`, `ConversationStage`, sales, payments, warranty, or support data. `/inbox` shows pending classification while the worker has not processed the message, then shows suggestions and lets the user manually apply suggested stages; those user-applied changes create the same audit trail as manual changes, with metadata pointing back to the AI classification.
+
+BullMQ uses Redis through `REDIS_URL`. Queue constants and helpers live in `packages/shared/src/queues.ts` so the web app and worker do not duplicate Redis configuration.
 
 Local classifier testing:
 
@@ -62,6 +64,16 @@ Webhook simulation with AI:
 
 ```bash
 pnpm webhook:simulate
+```
+
+Local async worker flow:
+
+```bash
+docker compose up -d
+pnpm dev
+pnpm worker:dev
+pnpm webhook:simulate
+pnpm queue:test
 ```
 
 ## Evolution Webhook Ingestion

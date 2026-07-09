@@ -13,11 +13,16 @@
     "db:seed": "pnpm --filter @jahf-comm/db db:seed",
     "db:studio": "pnpm --filter @jahf-comm/db db:studio",
     "webhook:simulate": "pnpm --filter @jahf-comm/web exec tsx scripts/simulate-evolution-webhook.ts",
-    "ai:test": "pnpm --filter @jahf-comm/ai test:classifier"
+    "ai:test": "pnpm --filter @jahf-comm/ai test:classifier",
+    "worker:dev": "pnpm --filter @jahf-comm/worker dev",
+    "worker:start": "pnpm --filter @jahf-comm/worker start",
+    "dev:all": "concurrently -n web,worker -c cyan,magenta \"pnpm dev\" \"pnpm worker:dev\"",
+    "queue:test": "pnpm --filter @jahf-comm/worker queue:test"
   },
   "devDependencies": {
     "@eslint/js": "latest",
     "@next/eslint-plugin-next": "latest",
+    "concurrently": "latest",
     "eslint": "latest",
     "globals": "latest",
     "typescript": "latest",

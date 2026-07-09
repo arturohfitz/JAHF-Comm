@@ -2,6 +2,10 @@ const appUrl = process.env.APP_URL ?? "http://localhost:3000";
 const webhookSecret = process.env.WEBHOOK_SECRET ?? "dev-webhook-secret";
 const endpoint = `${appUrl.replace(/\/$/, "")}/api/webhooks/evolution`;
 
+console.log(
+  "Simulando webhooks Evolution. Ejecuta pnpm worker:dev en paralelo para procesar IA."
+);
+
 type SimulationCase = {
   name: string;
   payload: {
@@ -150,7 +154,11 @@ async function postSimulation(simulation: SimulationCase) {
       {
         case: simulation.name,
         status: response.status,
-        body
+        body,
+        aiQueue:
+          body && typeof body === "object" && "aiQueue" in body
+            ? (body as { aiQueue: unknown }).aiQueue
+            : null
       },
       null,
       2
