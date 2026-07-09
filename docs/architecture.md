@@ -42,6 +42,24 @@ AI classification should run separately from webhook ingestion. AI output is adv
 
 Critical status changes must be paired with audit log records that include tenant, actor, entity, action, and change metadata.
 
+## Evolution Webhook Ingestion
+
+Step 5 adds an inbound-only Evolution-style webhook at `POST /api/webhooks/evolution`. The endpoint validates `x-webhook-secret`, parses JSON, normalizes the provider payload through `packages/whatsapp`, resolves the tenant-owned `WhatsAppAccount`, and writes source-of-truth inbound data to PostgreSQL.
+
+The reusable WhatsApp adapter lives under `packages/whatsapp/src/providers/evolution.ts`. It extracts the provider message id, sender phone, target phone or instance id, contact name, message text, message type, timestamp, and raw payload. Phone numbers are normalized into `+` plus digits, while provider-specific payload shape stays outside CRM code.
+
+The webhook uses existing database fields. `WhatsAppAccount.providerAccountId` identifies the Evolution instance, and `Message.providerMessageId` prevents duplicate inbound messages per tenant. No schema migration is required for this step.
+
+For each non-duplicate inbound message, the app creates or updates a tenant-scoped `Contact`, creates or reuses an open `Conversation`, creates an inbound `Message`, updates `Conversation.lastMessageAt`, creates a timeline `CustomerEvent`, creates an internal `Notification`, and records an `AuditLog` for message creation. AI classification and real message sending remain separate future workflows.
+
+Local testing is done with:
+
+```bash
+pnpm webhook:simulate
+```
+
+The simulator posts four local Evolution-style payloads to the webhook: a new price inquiry, an existing support contact, an existing pending-payment contact, and a duplicate provider message id.
+
 ## Demo Session
 
 The current web app uses a temporary development-only session helper that always resolves the `jahf-demo` tenant and the demo admin user created by the Prisma seed. This is not production authentication. Real login, tenant selection, authorization, and session management should replace it before any production workflow is enabled.

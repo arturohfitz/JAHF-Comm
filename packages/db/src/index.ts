@@ -52,3 +52,4 @@ export {
   WhatsAppAccountStatus,
   WhatsAppProvider
 } from "@prisma/client";
+export type { Prisma } from "@prisma/client";

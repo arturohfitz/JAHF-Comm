@@ -12,6 +12,7 @@
   "dependencies": {
     "@jahf-comm/db": "workspace:*",
     "@jahf-comm/shared": "workspace:*",
+    "@jahf-comm/whatsapp": "workspace:*",
     "@radix-ui/react-slot": "latest",
     "class-variance-authority": "latest",
     "clsx": "latest",
@@ -28,6 +29,7 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "tailwindcss": "latest",
+    "tsx": "latest",
     "typescript": "latest"
   }
 }

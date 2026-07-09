@@ -1,13 +1,10 @@
-export type WhatsAppProviderMessage = {
-  provider: string;
-  externalMessageId: string;
-  externalConversationId: string | null;
-  from: string;
-  to: string;
-  receivedAt: Date;
-  text: string | null;
-};
-
-export interface WhatsAppProviderAdapter {
-  readonly provider: string;
-}
+export {
+  evolutionProvider,
+  normalizeEvolutionInboundMessage,
+  normalizePhoneNumber
+} from "./providers/evolution";
+export type {
+  NormalizedInboundMessage,
+  NormalizedWhatsAppMessageType,
+  WhatsAppProviderAdapter
+} from "./types";

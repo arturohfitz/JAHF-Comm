@@ -34,6 +34,16 @@ The objective of Step 2 is database design only. It prepares the tenant-safe dat
 - Add AI classification behind the `packages/ai` boundary.
 - Store AI output as suggestions that users can accept, reject, or ignore.
 
+The objective of Step 5 is inbound webhook ingestion only. Evolution-style payloads are normalized by `packages/whatsapp`, accepted by `POST /api/webhooks/evolution`, stored as inbound messages, and surfaced in `/inbox`. The simulator runs with `pnpm webhook:simulate` and covers a new contact, existing support contact, pending-payment contact, and duplicate message id.
+
+Still pending before real WhatsApp use:
+
+- Configure a real Evolution or Meta provider account per tenant.
+- Replace the development webhook secret with managed environment secrets.
+- Add provider signature verification if the provider supports it.
+- Add delivery status handling, outbound sending, retries, and queue processing.
+- Add AI classification as a separate post-ingestion workflow, not inside webhook parsing.
+
 ## Phase 5: Operations
 
 - Add production deployment configuration.
