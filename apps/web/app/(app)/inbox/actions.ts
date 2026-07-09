@@ -26,6 +26,30 @@ function isConversationStage(value: string): value is ConversationStage {
   return Object.values(ConversationStage).includes(value as ConversationStage);
 }
 
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function readContactStageSuggestion(value: unknown) {
+  const record = readRecord(value);
+  const suggestion = record?.contactStageSuggestion;
+
+  return typeof suggestion === "string" && isContactStage(suggestion)
+    ? suggestion
+    : null;
+}
+
+function readConversationStageSuggestion(value: unknown) {
+  const record = readRecord(value);
+  const suggestion = record?.conversationStageSuggestion;
+
+  return typeof suggestion === "string" && isConversationStage(suggestion)
+    ? suggestion
+    : null;
+}
+
 function redirectToConversation(conversationId: string) {
   revalidatePath("/inbox");
   redirect(`/inbox?conversationId=${conversationId}`);
@@ -342,6 +366,191 @@ export async function createInternalNote(formData: FormData) {
       }
     });
   });
+
+  redirectToConversation(conversationId);
+}
+
+export async function applyAiContactStageSuggestion(formData: FormData) {
+  const { tenant, user } = await getDemoSession();
+  const conversationId = getString(formData, "conversationId");
+  const aiClassificationId = getString(formData, "aiClassificationId");
+
+  if (!conversationId || !aiClassificationId) {
+    throw new Error("Clasificacion IA requerida para aplicar sugerencia.");
+  }
+
+  const classification = await prisma.aIClassification.findFirst({
+    where: {
+      id: aiClassificationId,
+      tenantId: tenant.id,
+      conversationId
+    },
+    select: {
+      id: true,
+      contactId: true,
+      rawResult: true,
+      contact: {
+        select: {
+          name: true,
+          stage: true
+        }
+      }
+    }
+  });
+
+  if (!classification) {
+    throw new Error("Clasificacion IA no encontrada para este tenant.");
+  }
+
+  const nextStage = readContactStageSuggestion(classification.rawResult);
+
+  if (!nextStage) {
+    throw new Error("La clasificacion IA no tiene sugerencia valida de cliente.");
+  }
+
+  if (classification.contact.stage !== nextStage) {
+    await prisma.$transaction([
+      prisma.contact.update({
+        where: {
+          tenantId_id: {
+            tenantId: tenant.id,
+            id: classification.contactId
+          }
+        },
+        data: {
+          stage: nextStage
+        }
+      }),
+      prisma.customerEvent.create({
+        data: {
+          tenantId: tenant.id,
+          contactId: classification.contactId,
+          conversationId,
+          actorUserId: user.id,
+          type: CustomerEventType.STATUS_CHANGED,
+          title: "Sugerencia IA aplicada al cliente",
+          description: `${classification.contact.name}: ${classification.contact.stage} -> ${nextStage}`,
+          metadata: {
+            entityType: "Contact",
+            aiClassificationId: classification.id,
+            appliedBy: "user",
+            before: classification.contact.stage,
+            after: nextStage
+          }
+        }
+      }),
+      prisma.auditLog.create({
+        data: {
+          tenantId: tenant.id,
+          actorUserId: user.id,
+          action: AuditAction.STATUS_CHANGE,
+          entityType: "Contact",
+          entityId: classification.contactId,
+          before: {
+            stage: classification.contact.stage
+          },
+          after: {
+            stage: nextStage,
+            source: "ai_suggestion",
+            aiClassificationId: classification.id
+          }
+        }
+      })
+    ]);
+  }
+
+  redirectToConversation(conversationId);
+}
+
+export async function applyAiConversationStageSuggestion(formData: FormData) {
+  const { tenant, user } = await getDemoSession();
+  const conversationId = getString(formData, "conversationId");
+  const aiClassificationId = getString(formData, "aiClassificationId");
+
+  if (!conversationId || !aiClassificationId) {
+    throw new Error("Clasificacion IA requerida para aplicar sugerencia.");
+  }
+
+  const classification = await prisma.aIClassification.findFirst({
+    where: {
+      id: aiClassificationId,
+      tenantId: tenant.id,
+      conversationId
+    },
+    select: {
+      id: true,
+      contactId: true,
+      rawResult: true,
+      conversation: {
+        select: {
+          stage: true
+        }
+      }
+    }
+  });
+
+  if (!classification) {
+    throw new Error("Clasificacion IA no encontrada para este tenant.");
+  }
+
+  const nextStage = readConversationStageSuggestion(classification.rawResult);
+
+  if (!nextStage) {
+    throw new Error(
+      "La clasificacion IA no tiene sugerencia valida de conversacion."
+    );
+  }
+
+  if (classification.conversation.stage !== nextStage) {
+    await prisma.$transaction([
+      prisma.conversation.update({
+        where: {
+          tenantId_id: {
+            tenantId: tenant.id,
+            id: conversationId
+          }
+        },
+        data: {
+          stage: nextStage
+        }
+      }),
+      prisma.customerEvent.create({
+        data: {
+          tenantId: tenant.id,
+          contactId: classification.contactId,
+          conversationId,
+          actorUserId: user.id,
+          type: CustomerEventType.STATUS_CHANGED,
+          title: "Sugerencia IA aplicada a conversacion",
+          description: `${classification.conversation.stage} -> ${nextStage}`,
+          metadata: {
+            entityType: "Conversation",
+            aiClassificationId: classification.id,
+            appliedBy: "user",
+            before: classification.conversation.stage,
+            after: nextStage
+          }
+        }
+      }),
+      prisma.auditLog.create({
+        data: {
+          tenantId: tenant.id,
+          actorUserId: user.id,
+          action: AuditAction.STATUS_CHANGE,
+          entityType: "Conversation",
+          entityId: conversationId,
+          before: {
+            stage: classification.conversation.stage
+          },
+          after: {
+            stage: nextStage,
+            source: "ai_suggestion",
+            aiClassificationId: classification.id
+          }
+        }
+      })
+    ]);
+  }
 
   redirectToConversation(conversationId);
 }

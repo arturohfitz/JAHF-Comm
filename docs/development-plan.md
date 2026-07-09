@@ -44,6 +44,17 @@ Still pending before real WhatsApp use:
 - Add delivery status handling, outbound sending, retries, and queue processing.
 - Add AI classification as a separate post-ingestion workflow, not inside webhook parsing.
 
+The objective of Step 6 is advisory AI classification. `packages/ai` provides a structured classifier with an OpenAI implementation and a development mock fallback when `OPENAI_API_KEY` is absent. The webhook stores classifier output in `AIClassification`, creates timeline and notification records, and leaves CRM state unchanged unless a user manually applies a suggestion from `/inbox`.
+
+The classifier receives compact conversation context and returns intent, urgency, confidence, stage suggestions, summary, recommended action, concern flags, sentiment, and notification guidance. It must not create or modify sales, payments, warranty, support tickets, contact stages, or conversation stages automatically.
+
+Test commands:
+
+- `pnpm ai:test`: runs a classifier check with demo context. Uses mock if no API key is configured.
+- `pnpm webhook:simulate`: sends inbound messages that trigger classification, including price, support, payment, angry configuration, and duplicate-message cases.
+
+Production follow-up: move classification to a BullMQ worker so webhook acknowledgement remains fast under real traffic.
+
 ## Phase 5: Operations
 
 - Add production deployment configuration.

@@ -12,7 +12,8 @@
     "db:migrate": "pnpm --filter @jahf-comm/db db:migrate",
     "db:seed": "pnpm --filter @jahf-comm/db db:seed",
     "db:studio": "pnpm --filter @jahf-comm/db db:studio",
-    "webhook:simulate": "pnpm --filter @jahf-comm/web exec tsx scripts/simulate-evolution-webhook.ts"
+    "webhook:simulate": "pnpm --filter @jahf-comm/web exec tsx scripts/simulate-evolution-webhook.ts",
+    "ai:test": "pnpm --filter @jahf-comm/ai test:classifier"
   },
   "devDependencies": {
     "@eslint/js": "latest",

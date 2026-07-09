@@ -18,6 +18,8 @@ import { formatCurrency, formatDate, humanizeEnum } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import {
+  applyAiContactStageSuggestion,
+  applyAiConversationStageSuggestion,
   createInternalNote,
   updateContactStage,
   updateConversationAssignee,
@@ -67,6 +69,20 @@ function EmptyState({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
+}
+
+function readAiRawResult(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function readStringFlag(value: unknown) {
+  return typeof value === "string" ? value : null;
+}
+
+function readBooleanFlag(value: unknown) {
+  return typeof value === "boolean" ? value : null;
 }
 
 export default async function InboxPage({ searchParams }: InboxPageProps) {
@@ -214,6 +230,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                 confidence: true,
                 summary: true,
                 recommendedAction: true,
+                rawResult: true,
                 createdAt: true
               }
             },
@@ -257,6 +274,24 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
       : [];
 
     const lastAiClassification = selectedConversation?.aiClassifications[0];
+    const lastAiRawResult = readAiRawResult(lastAiClassification?.rawResult);
+    const aiContactStageSuggestion = readStringFlag(
+      lastAiRawResult?.contactStageSuggestion
+    );
+    const aiConversationStageSuggestion = readStringFlag(
+      lastAiRawResult?.conversationStageSuggestion
+    );
+    const aiRequiresHuman = readBooleanFlag(lastAiRawResult?.requiresHuman);
+    const aiDetectedPaymentConcern = readBooleanFlag(
+      lastAiRawResult?.detectedPaymentConcern
+    );
+    const aiDetectedSupportConcern = readBooleanFlag(
+      lastAiRawResult?.detectedSupportConcern
+    );
+    const aiDetectedConfigurationConcern = readBooleanFlag(
+      lastAiRawResult?.detectedConfigurationConcern
+    );
+    const aiSentiment = readStringFlag(lastAiRawResult?.sentiment);
     const salesTotal = selectedConversation?.sales.reduce(
       (total, sale) => total + sale.amountCents,
       0
@@ -684,16 +719,22 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                 <section className="space-y-3 border-t pt-4">
                   <div className="flex items-center gap-2">
                     <Bot className="h-4 w-4 text-primary" />
-                    <h3 className="text-sm font-semibold">Ultima IA demo</h3>
+                    <h3 className="text-sm font-semibold">Ultima IA</h3>
                   </div>
                   {!lastAiClassification ? (
                     <EmptyState>No hay clasificacion IA registrada.</EmptyState>
                   ) : (
                     <div className="space-y-3 rounded-md border p-3 text-sm">
+                      <p className="text-xs font-medium uppercase text-muted-foreground">
+                        Sugerencias IA, no cambios aplicados
+                      </p>
                       <div className="flex flex-wrap gap-2">
                         <StatusBadge value={lastAiClassification.detectedIntent} />
                         <StatusBadge value={lastAiClassification.urgency} />
                       </div>
+                      <InfoRow label="Confianza">
+                        {Math.round(lastAiClassification.confidence * 100)}%
+                      </InfoRow>
                       <p>
                         {lastAiClassification.summary ??
                           "Sin resumen para agente."}
@@ -703,9 +744,87 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                         {lastAiClassification.recommendedAction ??
                           "Sin accion recomendada."}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        Confianza: {Math.round(lastAiClassification.confidence * 100)}%
-                      </p>
+                      <div className="grid gap-2 border-t pt-3">
+                        <InfoRow label="Sug. cliente">
+                          {aiContactStageSuggestion ? (
+                            <StatusBadge value={aiContactStageSuggestion} />
+                          ) : (
+                            "Sin sugerencia"
+                          )}
+                        </InfoRow>
+                        <InfoRow label="Sug. conversacion">
+                          {aiConversationStageSuggestion ? (
+                            <StatusBadge value={aiConversationStageSuggestion} />
+                          ) : (
+                            "Sin sugerencia"
+                          )}
+                        </InfoRow>
+                        <InfoRow label="Requiere humano">
+                          {aiRequiresHuman === null
+                            ? "Sin dato"
+                            : aiRequiresHuman
+                              ? "Si"
+                              : "No"}
+                        </InfoRow>
+                        <InfoRow label="Pago">
+                          {aiDetectedPaymentConcern ? "Detectado" : "No"}
+                        </InfoRow>
+                        <InfoRow label="Soporte">
+                          {aiDetectedSupportConcern ? "Detectado" : "No"}
+                        </InfoRow>
+                        <InfoRow label="Configuracion">
+                          {aiDetectedConfigurationConcern ? "Detectado" : "No"}
+                        </InfoRow>
+                        <InfoRow label="Sentimiento">
+                          {aiSentiment ? humanizeEnum(aiSentiment) : "Sin dato"}
+                        </InfoRow>
+                      </div>
+                      <div className="grid gap-2 border-t pt-3">
+                        {aiContactStageSuggestion ? (
+                          <form action={applyAiContactStageSuggestion}>
+                            <input
+                              name="conversationId"
+                              type="hidden"
+                              value={selectedConversation.id}
+                            />
+                            <input
+                              name="aiClassificationId"
+                              type="hidden"
+                              value={lastAiClassification.id}
+                            />
+                            <Button
+                              className="w-full"
+                              size="sm"
+                              type="submit"
+                              variant="outline"
+                            >
+                              Aplicar etapa sugerida del cliente
+                            </Button>
+                          </form>
+                        ) : null}
+                        {aiConversationStageSuggestion ? (
+                          <form action={applyAiConversationStageSuggestion}>
+                            <input
+                              name="conversationId"
+                              type="hidden"
+                              value={selectedConversation.id}
+                            />
+                            <input
+                              name="aiClassificationId"
+                              type="hidden"
+                              value={lastAiClassification.id}
+                            />
+                            <Button
+                              className="w-full"
+                              size="sm"
+                              type="submit"
+                              variant="outline"
+                            >
+                              Aplicar etapa sugerida de conversacion
+                            </Button>
+                          </form>
+                        ) : null}
+                      </div>
                     </div>
                   )}
                 </section>

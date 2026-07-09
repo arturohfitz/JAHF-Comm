@@ -27,16 +27,18 @@ type SimulationCase = {
 };
 
 const now = Math.floor(Date.now() / 1000);
+const runId = Date.now();
+const duplicateMessageId = `sim-payment-${runId}`;
 
 const simulations: SimulationCase[] = [
   {
-    name: "Cliente nuevo preguntando precio",
+    name: "Prospecto pidiendo precio",
     payload: {
       event: "messages.upsert",
       instance: "demo-evolution-instance",
       data: {
         key: {
-          id: "sim-price-001",
+          id: `sim-price-${runId}`,
           remoteJid: "525512349999@s.whatsapp.net",
           fromMe: false
         },
@@ -50,21 +52,21 @@ const simulations: SimulationCase[] = [
     }
   },
   {
-    name: "Cliente existente pidiendo soporte",
+    name: "Cliente vendido pidiendo soporte",
     payload: {
       event: "messages.upsert",
       instance: "demo-evolution-instance",
       data: {
         key: {
-          id: "sim-support-001",
-          remoteJid: "525512340003@s.whatsapp.net",
+          id: `sim-support-${runId}`,
+          remoteJid: "525512340001@s.whatsapp.net",
           fromMe: false
         },
-        pushName: "Carla Torres",
+        pushName: "Ana Lopez",
         messageType: "conversation",
         messageTimestamp: now + 1,
         message: {
-          conversation: "Necesito ayuda con mi configuracion, por favor."
+          conversation: "Ya soy cliente y necesito soporte con mi configuracion."
         }
       }
     }
@@ -76,7 +78,7 @@ const simulations: SimulationCase[] = [
       instance: "demo-evolution-instance",
       data: {
         key: {
-          id: "sim-payment-001",
+          id: duplicateMessageId,
           remoteJid: "525512340002@s.whatsapp.net",
           fromMe: false
         },
@@ -90,19 +92,40 @@ const simulations: SimulationCase[] = [
     }
   },
   {
+    name: "Cliente molesto reclamando configuracion",
+    payload: {
+      event: "messages.upsert",
+      instance: "demo-evolution-instance",
+      data: {
+        key: {
+          id: `sim-angry-config-${runId}`,
+          remoteJid: "525512340004@s.whatsapp.net",
+          fromMe: false
+        },
+        pushName: "Diego Ramirez",
+        messageType: "conversation",
+        messageTimestamp: now + 3,
+        message: {
+          conversation:
+            "Estoy molesto, pague y todavia no me configuraron nada. Necesito solucion urgente."
+        }
+      }
+    }
+  },
+  {
     name: "Mensaje duplicado con mismo providerMessageId",
     payload: {
       event: "messages.upsert",
       instance: "demo-evolution-instance",
       data: {
         key: {
-          id: "sim-payment-001",
+          id: duplicateMessageId,
           remoteJid: "525512340002@s.whatsapp.net",
           fromMe: false
         },
         pushName: "Bruno Martinez",
         messageType: "conversation",
-        messageTimestamp: now + 3,
+        messageTimestamp: now + 4,
         message: {
           conversation: "Este payload simula un duplicado y no debe duplicarse."
         }

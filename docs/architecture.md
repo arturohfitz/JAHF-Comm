@@ -42,6 +42,28 @@ AI classification should run separately from webhook ingestion. AI output is adv
 
 Critical status changes must be paired with audit log records that include tenant, actor, entity, action, and change metadata.
 
+## AI Conversation Classification
+
+Step 6 adds a reusable classifier in `packages/ai`. The classifier receives compact tenant-scoped context: tenant id, contact, conversation, last 20 messages, contact sales, payments, open support tickets, current contact stage, and current conversation stage.
+
+The classifier returns a structured object with intent, urgency, confidence, stage suggestions, summary for the agent, recommended action, human-review flag, payment/support/configuration concern flags, sentiment, and optional notification copy. OpenAI calls use Structured Outputs with a JSON Schema. `OPENAI_MODEL` controls the model, with a single default in `packages/ai`; `OPENAI_API_KEY` is never logged or committed.
+
+If `OPENAI_API_KEY` is missing in development, JAHF Comm uses a controlled mock classifier. The mock is recorded in `AIClassification.rawResult.metadata.mode`, so tests and logs can distinguish it from real OpenAI classification without adding mock wording to the agent-facing UI.
+
+The Evolution webhook runs classification after saving an inbound message. It stores the result in `AIClassification`, creates a `CustomerEvent` of type `AI_CLASSIFIED`, optionally creates a `Notification`, and records an `AuditLog`. It does not automatically change `ContactStage`, `ConversationStage`, sales, payments, warranty, or support data. `/inbox` shows suggestions and lets the user manually apply suggested stages; those user-applied changes create the same audit trail as manual changes, with metadata pointing back to the AI classification.
+
+Local classifier testing:
+
+```bash
+pnpm ai:test
+```
+
+Webhook simulation with AI:
+
+```bash
+pnpm webhook:simulate
+```
+
 ## Evolution Webhook Ingestion
 
 Step 5 adds an inbound-only Evolution-style webhook at `POST /api/webhooks/evolution`. The endpoint validates `x-webhook-secret`, parses JSON, normalizes the provider payload through `packages/whatsapp`, resolves the tenant-owned `WhatsAppAccount`, and writes source-of-truth inbound data to PostgreSQL.
