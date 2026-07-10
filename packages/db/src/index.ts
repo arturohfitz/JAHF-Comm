@@ -45,6 +45,7 @@ export {
   MessageType,
   NotificationType,
   PaymentStatus,
+  Prisma,
   PrismaClient,
   SaleStatus,
   SupportStatus,
@@ -53,4 +54,3 @@ export {
   WhatsAppAccountStatus,
   WhatsAppProvider
 } from "@prisma/client";
-export type { Prisma } from "@prisma/client";
