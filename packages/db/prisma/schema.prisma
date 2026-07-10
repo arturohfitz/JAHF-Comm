@@ -548,24 +548,29 @@ model CustomerMemory {
 }
 
 model Notification {
-  id          String           @id @default(cuid())
-  tenantId    String
-  userId      String?
-  type        NotificationType
-  title       String
-  description String?
-  isRead      Boolean          @default(false)
-  readAt      DateTime?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user        User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id               String           @id @default(cuid())
+  tenantId         String
+  userId           String?
+  type             NotificationType
+  title            String
+  description      String?
+  metadata         Json?
+  deduplicationKey String?
+  isRead           Boolean          @default(false)
+  readAt           DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user             User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, id])
+  @@unique([tenantId, deduplicationKey])
   @@index([tenantId])
   @@index([tenantId, userId])
+  @@index([tenantId, userId, isRead])
   @@index([tenantId, type])
   @@index([tenantId, isRead])
+  @@index([tenantId, deduplicationKey])
   @@index([tenantId, createdAt])
 }
 

@@ -17,6 +17,10 @@
     "./customer-memory-view": {
       "types": "./src/customer-memory-view.ts",
       "import": "./src/customer-memory-view.ts"
+    },
+    "./customer-alerts": {
+      "types": "./src/customer-alerts.ts",
+      "import": "./src/customer-alerts.ts"
     }
   },
   "scripts": {
@@ -30,6 +34,7 @@
     "customer-memory:backfill": "tsx scripts/backfill-customer-memory.ts",
     "test:customer-memory": "tsx --test tests/customer-memory*.test.ts",
     "test:customer-memory:view": "tsx --test tests/customer-memory-view.test.ts",
+    "test:customer-alerts": "tsx --test tests/customer-alerts.test.ts",
     "production:seed-admin": "tsx scripts/create-admin.ts"
   },
   "dependencies": {

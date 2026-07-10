@@ -8,6 +8,7 @@
     "build": "next build",
     "lint": "eslint . --max-warnings=0",
     "start": "next start -p 3000",
+    "test:notifications": "tsx --test tests/notification-polling.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
