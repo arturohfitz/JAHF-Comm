@@ -1,5 +1,9 @@
 import { DEFAULT_OPENAI_MODEL, classifyConversation } from "@jahf-comm/ai";
 import {
+  applyAIClassificationToMemory,
+  refreshCustomerMemory
+} from "@jahf-comm/db/customer-memory";
+import {
   AuditAction,
   CustomerEventType,
   NotificationType,
@@ -113,6 +117,12 @@ async function loadClassificationContext(payload: AiClassificationJobPayload) {
 export async function processAiClassificationJob(
   payload: AiClassificationJobPayload
 ): Promise<ClassificationOutcome> {
+  await refreshCustomerMemory({
+    tenantId: payload.tenantId,
+    contactId: payload.contactId,
+    currentMessageId: payload.messageId
+  });
+
   const existing = await prisma.aIClassification.findFirst({
     where: {
       tenantId: payload.tenantId,
@@ -124,6 +134,11 @@ export async function processAiClassificationJob(
   });
 
   if (existing) {
+    await applyAIClassificationToMemory({
+      tenantId: payload.tenantId,
+      aiClassificationId: existing.id
+    });
+
     return {
       status: "skipped_existing",
       aiClassificationId: existing.id
@@ -279,11 +294,21 @@ export async function processAiClassificationJob(
   });
 
   if (saved.status === "skipped_existing") {
+    await applyAIClassificationToMemory({
+      tenantId: payload.tenantId,
+      aiClassificationId: saved.id
+    });
+
     return {
       status: "skipped_existing",
       aiClassificationId: saved.id
     };
   }
+
+  await applyAIClassificationToMemory({
+    tenantId: payload.tenantId,
+    aiClassificationId: saved.id
+  });
 
   return {
     status: "created",

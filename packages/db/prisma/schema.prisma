@@ -140,6 +140,18 @@ enum CustomerEventType {
   NOTIFICATION_CREATED
 }
 
+enum CustomerReturnType {
+  FIRST_CONTACT
+  ACTIVE_CONVERSATION
+  OPERATIONAL_RETURN
+  COMMERCIAL_REACTIVATION
+}
+
+enum MemorySummarySource {
+  HEURISTIC
+  AI
+}
+
 enum WebhookLogStatus {
   RECEIVED
   PROCESSED
@@ -149,24 +161,25 @@ enum WebhookLogStatus {
 }
 
 model Tenant {
-  id                  String                @id @default(cuid())
-  name                String
-  slug                String                @unique
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-  memberships         Membership[]
-  whatsappAccounts    WhatsAppAccount[]
-  contacts            Contact[]
-  conversations       Conversation[]
-  messages            Message[]
-  customerEvents      CustomerEvent[]
-  sales               Sale[]
-  payments            Payment[]
-  supportTickets      SupportTicket[]
-  aiClassifications   AIClassification[]
-  notifications       Notification[]
-  auditLogs           AuditLog[]
-  webhookLogs         WebhookLog[]
+  id                String             @id @default(cuid())
+  name              String
+  slug              String             @unique
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  memberships       Membership[]
+  whatsappAccounts  WhatsAppAccount[]
+  contacts          Contact[]
+  conversations     Conversation[]
+  messages          Message[]
+  customerEvents    CustomerEvent[]
+  sales             Sale[]
+  payments          Payment[]
+  supportTickets    SupportTicket[]
+  aiClassifications AIClassification[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  webhookLogs       WebhookLog[]
+  customerMemories  CustomerMemory[]
 
   @@index([createdAt])
 }
@@ -273,6 +286,7 @@ model Contact {
   payments              Payment[]
   supportTickets        SupportTicket[]
   aiClassifications     AIClassification[]
+  customerMemory        CustomerMemory?
 
   @@unique([tenantId, id])
   @@unique([tenantId, normalizedPhoneNumber])
@@ -316,23 +330,23 @@ model Conversation {
 }
 
 model Message {
-  id                String              @id @default(cuid())
+  id                String             @id @default(cuid())
   tenantId          String
   conversationId    String
   contactId         String
   whatsappAccountId String
   direction         MessageDirection
-  type              MessageType         @default(TEXT)
+  type              MessageType        @default(TEXT)
   text              String?
   providerMessageId String?
   rawPayload        Json?
   sentAt            DateTime
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  conversation      Conversation        @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
-  contact           Contact             @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
-  whatsappAccount   WhatsAppAccount     @relation(fields: [tenantId, whatsappAccountId], references: [tenantId, id], onDelete: Cascade)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation      Conversation       @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
+  contact           Contact            @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
+  whatsappAccount   WhatsAppAccount    @relation(fields: [tenantId, whatsappAccountId], references: [tenantId, id], onDelete: Cascade)
   aiClassifications AIClassification[]
 
   @@unique([tenantId, id])
@@ -373,20 +387,20 @@ model CustomerEvent {
 }
 
 model Sale {
-  id             String     @id @default(cuid())
+  id             String        @id @default(cuid())
   tenantId       String
   contactId      String
   conversationId String?
   product        String
   amountCents    Int
-  currency       String     @default("MXN")
+  currency       String        @default("MXN")
   soldAt         DateTime
-  status         SaleStatus @default(PENDING)
+  status         SaleStatus    @default(PENDING)
   notes          String?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  tenant         Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact        Contact    @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact        Contact       @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
   conversation   Conversation? @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: SetNull)
   payments       Payment[]
 
@@ -484,6 +498,53 @@ model AIClassification {
   @@index([tenantId, detectedIntent])
   @@index([tenantId, urgency])
   @@index([tenantId, createdAt])
+}
+
+model CustomerMemory {
+  id                      String              @id @default(cuid())
+  tenantId                String
+  contactId               String
+  firstSeenAt             DateTime?
+  lastInteractionAt       DateTime?
+  previousInteractionAt   DateTime?
+  messageCount            Int                 @default(0)
+  inboundMessageCount     Int                 @default(0)
+  conversationCount       Int                 @default(0)
+  hasPreviousInteractions Boolean             @default(false)
+  isReturningCustomer     Boolean             @default(false)
+  lastReturnType          CustomerReturnType  @default(FIRST_CONTACT)
+  lastInactivityMinutes   Int?
+  lastReactivatedAt       DateTime?
+  salesCount              Int                 @default(0)
+  hasRegisteredSale       Boolean             @default(false)
+  lastSaleAt              DateTime?
+  paymentsCount           Int                 @default(0)
+  openSupportTicketsCount Int                 @default(0)
+  commercialSummary       String?
+  summarySource           MemorySummarySource @default(HEURISTIC)
+  memoryVersion           Int                 @default(1)
+  signals                 Json?
+  lastIntent              AIIntent?
+  lastPriority            Urgency?
+  lastSentiment           String?
+  recommendedNextAction   String?
+  lastAIClassificationId  String?
+  lastAIMessageAt         DateTime?
+  lastProcessedMessageId  String?
+  lastProcessedMessageAt  DateTime?
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  tenant                  Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact                 Contact             @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, contactId])
+  @@index([tenantId])
+  @@index([tenantId, lastInteractionAt])
+  @@index([tenantId, isReturningCustomer])
+  @@index([tenantId, lastReturnType])
+  @@index([tenantId, lastProcessedMessageAt])
+  @@index([tenantId, lastAIMessageAt])
 }
 
 model Notification {
