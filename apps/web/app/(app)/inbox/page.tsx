@@ -6,6 +6,18 @@ import {
   prisma,
   SupportStatus
 } from "@jahf-comm/db";
+import {
+  formatInactivity,
+  getCustomerMemoryListViews,
+  mapIntentLabel,
+  mapPriorityLabel,
+  mapReturnTypeLabel,
+  mapSentimentLabel,
+  mapSummarySourceLabel,
+  selectConversationBadges,
+  type CustomerMemoryBadge,
+  type CustomerMemoryView
+} from "@jahf-comm/db/customer-memory-view";
 import { Bot, CheckCircle2, CircleAlert, Send, UserRound } from "lucide-react";
 import Link from "next/link";
 
@@ -101,6 +113,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
           lastMessageAt: true,
           contact: {
             select: {
+              id: true,
               name: true,
               phoneNumber: true,
               normalizedPhoneNumber: true,
@@ -145,6 +158,17 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
         }
       })
     ]);
+    let customerMemoryViews = new Map<string, CustomerMemoryView>();
+    let customerMemoryLoadFailed = false;
+
+    try {
+      customerMemoryViews = await getCustomerMemoryListViews({
+        tenantId: tenant.id,
+        contactIds: conversations.map((conversation) => conversation.contact.id)
+      });
+    } catch {
+      customerMemoryLoadFailed = true;
+    }
 
     const selectedConversationId = requestedConversationId
       ? conversations.some((conversation) => conversation.id === requestedConversationId)
@@ -254,6 +278,9 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
           }
         })
       : null;
+    const selectedCustomerMemory = selectedConversation
+      ? customerMemoryViews.get(selectedConversation.contact.id) ?? null
+      : null;
 
     const contactPayments = selectedConversation
       ? await prisma.payment.findMany({
@@ -349,6 +376,10 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                 conversations.map((conversation) => {
                   const lastMessage = conversation.messages[0];
                   const ai = conversation.aiClassifications[0];
+                  const customerMemory = customerMemoryViews.get(
+                    conversation.contact.id
+                  );
+                  const memoryBadges = selectConversationBadges(customerMemory);
                   const selected = conversation.id === selectedConversation?.id;
 
                   return (
@@ -394,6 +425,9 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                             <StatusBadge value={conversation.stage} />
                             <StatusBadge value={conversation.contact.stage} />
                             {ai ? <StatusBadge value={ai.urgency} /> : null}
+                            {memoryBadges.map((badge) => (
+                              <MemoryBadge badge={badge} key={badge.label} />
+                            ))}
                             <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground">
                               {conversation._count.messages} mensajes
                             </span>
@@ -538,6 +572,11 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                     </InfoRow>
                   </div>
                 </section>
+
+                <CustomerMemorySection
+                  loadFailed={customerMemoryLoadFailed}
+                  memory={selectedCustomerMemory}
+                />
 
                 <section className="space-y-3 border-t pt-4">
                   <h3 className="text-sm font-semibold">Controles manuales</h3>
@@ -926,5 +965,208 @@ function InfoRow({
       <span className="text-muted-foreground">{label}</span>
       <span className="min-w-0 text-right font-medium">{children}</span>
     </div>
+  );
+}
+
+function MemoryBadge({ badge }: { badge: CustomerMemoryBadge }) {
+  const toneClassName: Record<CustomerMemoryBadge["tone"], string> = {
+    default: "border-slate-200 bg-slate-50 text-slate-700",
+    success: "border-teal-200 bg-teal-50 text-teal-700",
+    warning: "border-amber-200 bg-amber-50 text-amber-700",
+    danger: "border-red-200 bg-red-50 text-red-700"
+  };
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium ${
+        toneClassName[badge.tone]
+      }`}
+      title={badge.title}
+    >
+      {badge.label}
+    </span>
+  );
+}
+
+function getMemoryStatus(memory: CustomerMemoryView | null) {
+  if (!memory) {
+    return {
+      label: "Memoria aun no generada",
+      description: "Esta conversacion todavia no tiene memoria comercial procesada."
+    };
+  }
+
+  if (memory.processing.isStale) {
+    return {
+      label: "Actualizando",
+      description: "Hay mensajes recientes pendientes de analisis."
+    };
+  }
+
+  return {
+    label: "Actualizado",
+    description: "La memoria esta sincronizada con los mensajes entrantes."
+  };
+}
+
+function getPanelBadges(memory: CustomerMemoryView) {
+  return [
+    {
+      label: mapReturnTypeLabel(memory.returnStatus.returnType),
+      tone:
+        memory.returnStatus.returnType === "COMMERCIAL_REACTIVATION"
+          ? "warning"
+          : "default"
+    },
+    {
+      label: mapSummarySourceLabel(memory.summary.source),
+      tone: "default"
+    },
+    {
+      label: memory.commercial.hasRegisteredSale
+        ? "Venta registrada"
+        : "Sin venta registrada",
+      tone: memory.commercial.hasRegisteredSale ? "success" : "default"
+    },
+    ...(memory.commercial.openSupportTicketsCount > 0
+      ? [
+          {
+            label: "Soporte abierto",
+            tone: "warning" as const
+          }
+        ]
+      : []),
+    ...selectConversationBadges(memory, 2)
+  ] satisfies CustomerMemoryBadge[];
+}
+
+function CustomerMemorySection({
+  loadFailed,
+  memory
+}: {
+  loadFailed: boolean;
+  memory: CustomerMemoryView | null;
+}) {
+  if (loadFailed) {
+    return (
+      <section className="space-y-3 border-t pt-4">
+        <h3 className="text-sm font-semibold">Resumen inteligente</h3>
+        <EmptyState>
+          No fue posible cargar la memoria comercial en este momento.
+        </EmptyState>
+      </section>
+    );
+  }
+
+  const status = getMemoryStatus(memory);
+
+  return (
+    <section className="space-y-3 border-t pt-4">
+      <div className="flex items-center gap-2">
+        <Bot className="h-4 w-4 text-primary" />
+        <h3 className="text-sm font-semibold">Resumen inteligente</h3>
+      </div>
+
+      {!memory ? (
+        <EmptyState>{status.description}</EmptyState>
+      ) : (
+        <div className="space-y-3 rounded-md border p-3 text-sm">
+          <div className="flex flex-wrap gap-2">
+            <MemoryBadge
+              badge={{
+                label: status.label,
+                tone: memory.processing.isStale ? "warning" : "success"
+              }}
+            />
+            {getPanelBadges(memory).map((badge) => (
+              <MemoryBadge badge={badge} key={badge.label} />
+            ))}
+          </div>
+
+          {memory.processing.isStale ? (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {status.description}
+            </p>
+          ) : null}
+
+          <p className="leading-6">
+            {memory.summary.text ??
+              "Esta conversacion todavia no tiene resumen comercial disponible."}
+          </p>
+
+          {memory.classification.recommendedNextAction ? (
+            <p className="text-muted-foreground">
+              Accion recomendada: {memory.classification.recommendedNextAction}
+            </p>
+          ) : null}
+
+          <div className="grid gap-2 border-t pt-3">
+            <InfoRow label="Estado">{status.label}</InfoRow>
+            <InfoRow label="Actualizado">
+              {formatDate(memory.summary.updatedAt)}
+            </InfoRow>
+            <InfoRow label="Primera interaccion">
+              {formatDate(memory.history.firstSeenAt)}
+            </InfoRow>
+            <InfoRow label="Ultima interaccion">
+              {formatDate(memory.history.lastInteractionAt)}
+            </InfoRow>
+            <InfoRow label="Ultima reactivacion">
+              {formatDate(memory.returnStatus.lastReactivatedAt)}
+            </InfoRow>
+            <InfoRow label="Inactividad anterior">
+              {formatInactivity(memory.returnStatus.inactivityMinutes)}
+            </InfoRow>
+            <InfoRow label="Mensajes">
+              {memory.history.messageCount}
+            </InfoRow>
+            <InfoRow label="Entrantes">
+              {memory.history.inboundMessageCount}
+            </InfoRow>
+            <InfoRow label="Conversaciones">
+              {memory.history.conversationCount}
+            </InfoRow>
+          </div>
+
+          <div className="grid gap-2 border-t pt-3">
+            <InfoRow label="Venta registrada">
+              {memory.commercial.hasRegisteredSale ? "Si" : "No"}
+            </InfoRow>
+            {!memory.commercial.hasRegisteredSale ? (
+              <p className="text-xs text-muted-foreground">
+                No hay una venta registrada en el sistema.
+              </p>
+            ) : null}
+            <InfoRow label="Ventas">
+              {memory.commercial.salesCount}
+            </InfoRow>
+            <InfoRow label="Ultima venta">
+              {formatDate(memory.commercial.lastSaleAt)}
+            </InfoRow>
+            <InfoRow label="Pagos">
+              {memory.commercial.paymentsCount}
+            </InfoRow>
+            <InfoRow label="Tickets abiertos">
+              {memory.commercial.openSupportTicketsCount}
+            </InfoRow>
+          </div>
+
+          <div className="grid gap-2 border-t pt-3">
+            <InfoRow label="Intencion">
+              {mapIntentLabel(memory.classification.intent)}
+            </InfoRow>
+            <InfoRow label="Prioridad">
+              {mapPriorityLabel(memory.classification.priority)}
+            </InfoRow>
+            <InfoRow label="Sentimiento">
+              {mapSentimentLabel(memory.classification.sentiment)}
+            </InfoRow>
+            <InfoRow label="IA actualizada">
+              {formatDate(memory.classification.lastAIMessageAt)}
+            </InfoRow>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

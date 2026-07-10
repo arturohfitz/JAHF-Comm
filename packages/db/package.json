@@ -13,6 +13,10 @@
     "./customer-memory": {
       "types": "./src/customer-memory.ts",
       "import": "./src/customer-memory.ts"
+    },
+    "./customer-memory-view": {
+      "types": "./src/customer-memory-view.ts",
+      "import": "./src/customer-memory-view.ts"
     }
   },
   "scripts": {
@@ -24,7 +28,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio --schema prisma/schema.prisma",
     "customer-memory:backfill": "tsx scripts/backfill-customer-memory.ts",
-    "test:customer-memory": "tsx --test tests/customer-memory.test.ts",
+    "test:customer-memory": "tsx --test tests/customer-memory*.test.ts",
+    "test:customer-memory:view": "tsx --test tests/customer-memory-view.test.ts",
     "production:seed-admin": "tsx scripts/create-admin.ts"
   },
   "dependencies": {
