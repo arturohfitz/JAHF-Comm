@@ -193,6 +193,9 @@ importers:
 
   packages/whatsapp:
     devDependencies:
+      tsx:
+        specifier: latest
+        version: 4.23.0
       typescript:
         specifier: 5.9.3
         version: 5.9.3
