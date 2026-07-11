@@ -3,6 +3,7 @@
 import {
   AuditAction,
   MembershipRole,
+  NotificationSeverity,
   Prisma,
   prisma,
   WhatsAppAccountStatus,
@@ -21,6 +22,33 @@ function readFormString(formData: FormData, key: string) {
 
 function nullableString(value: string) {
   return value.length > 0 ? value : null;
+}
+
+function readFormBoolean(formData: FormData, key: string) {
+  return formData.get(key) === "on";
+}
+
+function parseNotificationSeverity(value: string) {
+  if (
+    Object.values(NotificationSeverity).includes(value as NotificationSeverity)
+  ) {
+    return value as NotificationSeverity;
+  }
+
+  throw new Error("Severidad minima no valida.");
+}
+
+function isValidTimezone(timezone: string) {
+  try {
+    Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isValidHHmm(value: string) {
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
 }
 
 function parseStatus(value: string) {
@@ -364,6 +392,175 @@ export async function disconnectWhatsAppAccountAction(formData: FormData) {
         after: after as Prisma.InputJsonValue
       }
     });
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/settings/whatsapp");
+}
+
+export async function updateTenantWhatsappAlertSettingsAction(
+  formData: FormData
+) {
+  const { tenant, user } = await requireRole([
+    MembershipRole.OWNER,
+    MembershipRole.ADMIN
+  ]);
+  const whatsappAccountId = nullableString(
+    readFormString(formData, "whatsappAlertsAccountId")
+  );
+  const whatsappAlertsEnabled = readFormBoolean(
+    formData,
+    "whatsappAlertsEnabled"
+  );
+
+  if (whatsappAccountId) {
+    const account = await prisma.whatsAppAccount.findFirst({
+      where: {
+        id: whatsappAccountId,
+        tenantId: tenant.id,
+        status: {
+          in: [WhatsAppAccountStatus.CONNECTED, WhatsAppAccountStatus.PENDING]
+        }
+      },
+      select: { id: true }
+    });
+
+    if (!account) {
+      throw new Error("La cuenta WhatsApp no pertenece a este tenant.");
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.tenantNotificationSettings.findUnique({
+      where: { tenantId: tenant.id }
+    });
+    const after = await tx.tenantNotificationSettings.upsert({
+      where: { tenantId: tenant.id },
+      create: {
+        tenantId: tenant.id,
+        whatsappAlertsAccountId: whatsappAccountId,
+        whatsappAlertsEnabled
+      },
+      update: {
+        whatsappAlertsAccountId: whatsappAccountId,
+        whatsappAlertsEnabled
+      }
+    });
+
+    await tx.auditLog.create({
+      data: {
+        tenantId: tenant.id,
+        actorUserId: user.id,
+        action: before ? AuditAction.UPDATE : AuditAction.CREATE,
+        entityType: "TenantNotificationSettings",
+        entityId: after.id,
+        before: before ? (before as Prisma.InputJsonValue) : Prisma.JsonNull,
+        after: after as Prisma.InputJsonValue
+      }
+    });
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/settings/whatsapp");
+}
+
+export async function updateMyWhatsappNotificationPreferenceAction(
+  formData: FormData
+) {
+  const { tenant, user, membership } = await requireRole([
+    MembershipRole.OWNER,
+    MembershipRole.ADMIN,
+    MembershipRole.AGENT,
+    MembershipRole.VIEWER
+  ]);
+  const whatsappPhone = nullableString(readFormString(formData, "whatsappPhone"));
+  const quietHoursEnabled = readFormBoolean(formData, "quietHoursEnabled");
+  const whatsappEnabled = readFormBoolean(formData, "whatsappEnabled");
+  const timezone = readFormString(formData, "timezone") || "UTC";
+  const quietHoursStart = quietHoursEnabled
+    ? nullableString(readFormString(formData, "quietHoursStart"))
+    : null;
+  const quietHoursEnd = quietHoursEnabled
+    ? nullableString(readFormString(formData, "quietHoursEnd"))
+    : null;
+
+  if (whatsappEnabled && membership.role === MembershipRole.VIEWER) {
+    throw new Error("VIEWER no puede activar alertas por WhatsApp.");
+  }
+
+  if (!isValidTimezone(timezone)) {
+    throw new Error("Zona horaria no valida.");
+  }
+
+  if (quietHoursEnabled) {
+    if (!quietHoursStart || !quietHoursEnd) {
+      throw new Error("El horario silencioso requiere inicio y fin.");
+    }
+
+    if (!isValidHHmm(quietHoursStart) || !isValidHHmm(quietHoursEnd)) {
+      throw new Error("El horario silencioso debe usar formato HH:mm.");
+    }
+  }
+
+  await prisma.notificationPreference.upsert({
+    where: {
+      tenantId_userId: {
+        tenantId: tenant.id,
+        userId: user.id
+      }
+    },
+    create: {
+      tenantId: tenant.id,
+      userId: user.id,
+      whatsappPhone: whatsappPhone ? normalizePhoneNumber(whatsappPhone) : null,
+      whatsappEnabled,
+      minimumSeverity: parseNotificationSeverity(
+        readFormString(formData, "minimumSeverity") || NotificationSeverity.HIGH
+      ),
+      returningCustomerEnabled: readFormBoolean(
+        formData,
+        "returningCustomerEnabled"
+      ),
+      supportEnabled: readFormBoolean(formData, "supportEnabled"),
+      highPriorityEnabled: readFormBoolean(formData, "highPriorityEnabled"),
+      negativeSentimentEnabled: readFormBoolean(
+        formData,
+        "negativeSentimentEnabled"
+      ),
+      quietHoursEnabled,
+      quietHoursStart,
+      quietHoursEnd,
+      timezone,
+      allowUrgentDuringQuietHours: readFormBoolean(
+        formData,
+        "allowUrgentDuringQuietHours"
+      )
+    },
+    update: {
+      whatsappPhone: whatsappPhone ? normalizePhoneNumber(whatsappPhone) : null,
+      whatsappEnabled,
+      minimumSeverity: parseNotificationSeverity(
+        readFormString(formData, "minimumSeverity") || NotificationSeverity.HIGH
+      ),
+      returningCustomerEnabled: readFormBoolean(
+        formData,
+        "returningCustomerEnabled"
+      ),
+      supportEnabled: readFormBoolean(formData, "supportEnabled"),
+      highPriorityEnabled: readFormBoolean(formData, "highPriorityEnabled"),
+      negativeSentimentEnabled: readFormBoolean(
+        formData,
+        "negativeSentimentEnabled"
+      ),
+      quietHoursEnabled,
+      quietHoursStart,
+      quietHoursEnd,
+      timezone,
+      allowUrgentDuringQuietHours: readFormBoolean(
+        formData,
+        "allowUrgentDuringQuietHours"
+      )
+    }
   });
 
   revalidatePath("/settings");

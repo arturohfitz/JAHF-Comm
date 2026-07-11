@@ -108,6 +108,9 @@ importers:
       '@jahf-comm/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@jahf-comm/whatsapp':
+        specifier: workspace:*
+        version: link:../../packages/whatsapp
       bullmq:
         specifier: latest
         version: 5.79.3

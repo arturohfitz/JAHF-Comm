@@ -43,6 +43,7 @@ export async function setTenantWhatsappAlertsAccount(input: {
   tenantId: string;
   actorUserId: string;
   whatsappAccountId: string | null;
+  whatsappAlertsEnabled?: boolean;
 }) {
   await requireTenantNotificationSettingsRole(input);
 
@@ -72,10 +73,11 @@ export async function setTenantWhatsappAlertsAccount(input: {
     create: {
       tenantId: input.tenantId,
       whatsappAlertsAccountId: input.whatsappAccountId,
-      whatsappAlertsEnabled: false
+      whatsappAlertsEnabled: input.whatsappAlertsEnabled ?? false
     },
     update: {
-      whatsappAlertsAccountId: input.whatsappAccountId
+      whatsappAlertsAccountId: input.whatsappAccountId,
+      whatsappAlertsEnabled: input.whatsappAlertsEnabled
     }
   });
 }

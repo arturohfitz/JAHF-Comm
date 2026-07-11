@@ -47,7 +47,10 @@ const {
 const {
   buildWhatsAppNotificationText,
   calculateQuietHoursEnd,
+  claimWhatsappNotificationDelivery,
+  getWhatsappAlertRuntimeState,
   isWithinQuietHours,
+  markStaleWhatsappDeliveriesUnknown,
   meetsMinimumSeverity,
   prepareWhatsappNotificationDelivery
 } = await import("../src/notification-deliveries.js");
@@ -368,6 +371,30 @@ test("job id de notification-delivery es deterministico y seguro para BullMQ", (
   assert.equal(first.includes(":"), false);
 });
 
+test("estado global se calcula como DISABLED, DRY_RUN y LIVE", () => {
+  assert.deepEqual(
+    getWhatsappAlertRuntimeState({
+      WHATSAPP_ALERTS_ENABLED: "false",
+      WHATSAPP_ALERTS_DRY_RUN: "true"
+    } as NodeJS.ProcessEnv),
+    { enabled: false, dryRun: true, mode: "DISABLED" }
+  );
+  assert.deepEqual(
+    getWhatsappAlertRuntimeState({
+      WHATSAPP_ALERTS_ENABLED: "true",
+      WHATSAPP_ALERTS_DRY_RUN: "true"
+    } as NodeJS.ProcessEnv),
+    { enabled: true, dryRun: true, mode: "DRY_RUN" }
+  );
+  assert.deepEqual(
+    getWhatsappAlertRuntimeState({
+      WHATSAPP_ALERTS_ENABLED: "true",
+      WHATSAPP_ALERTS_DRY_RUN: "false"
+    } as NodeJS.ProcessEnv),
+    { enabled: true, dryRun: false, mode: "LIVE" }
+  );
+});
+
 test("severidad respeta minimo configurado", () => {
   assert.equal(
     meetsMinimumSeverity({
@@ -605,6 +632,108 @@ test("dry-run crea delivery idempotente sin crear mensajes, contactos ni convers
   assert.equal((metadata?.messageHash as string).length, 64);
   assert.equal(metadata?.destinationMasked, "**********5678");
   assert.equal(JSON.stringify(metadata).includes("este texto no debe copiarse"), false);
+});
+
+test("LIVE crea PENDING y dos reclamos atomicos solo permiten un PROCESSING", async () => {
+  const base = await createBase("claim");
+  const notification = await configureReadyDelivery(base);
+  const prepared = await prepareWhatsappNotificationDelivery({
+    tenantId: base.tenant.id,
+    notificationId: notification.id,
+    env: {
+      WHATSAPP_ALERTS_ENABLED: "true",
+      WHATSAPP_ALERTS_DRY_RUN: "false"
+    } as NodeJS.ProcessEnv
+  });
+
+  assert.equal(prepared.delivery?.status, NotificationDeliveryStatus.PENDING);
+
+  const [first, second] = await Promise.all([
+    claimWhatsappNotificationDelivery({
+      tenantId: base.tenant.id,
+      notificationId: notification.id
+    }),
+    claimWhatsappNotificationDelivery({
+      tenantId: base.tenant.id,
+      notificationId: notification.id
+    })
+  ]);
+  const claimedCount = [first, second].filter(Boolean).length;
+
+  assert.equal(claimedCount, 1);
+});
+
+test("DRY_RUN terminal no cambia a PENDING al pasar a LIVE", async () => {
+  const base = await createBase("dry-terminal");
+  const notification = await configureReadyDelivery(base);
+  const dryRun = await prepareWhatsappNotificationDelivery({
+    tenantId: base.tenant.id,
+    notificationId: notification.id,
+    env: {
+      WHATSAPP_ALERTS_ENABLED: "true",
+      WHATSAPP_ALERTS_DRY_RUN: "true"
+    } as NodeJS.ProcessEnv
+  });
+  const live = await prepareWhatsappNotificationDelivery({
+    tenantId: base.tenant.id,
+    notificationId: notification.id,
+    env: {
+      WHATSAPP_ALERTS_ENABLED: "true",
+      WHATSAPP_ALERTS_DRY_RUN: "false"
+    } as NodeJS.ProcessEnv
+  });
+
+  assert.equal(dryRun.delivery?.status, NotificationDeliveryStatus.DRY_RUN);
+  assert.equal(live.delivery?.status, NotificationDeliveryStatus.DRY_RUN);
+});
+
+test("PROCESSING vencido se marca UNKNOWN de forma idempotente", async () => {
+  const base = await createBase("stale");
+  const notification = await configureReadyDelivery(base);
+  const delivery = await prepareWhatsappNotificationDelivery({
+    tenantId: base.tenant.id,
+    notificationId: notification.id,
+    env: {
+      WHATSAPP_ALERTS_ENABLED: "true",
+      WHATSAPP_ALERTS_DRY_RUN: "false"
+    } as NodeJS.ProcessEnv
+  });
+
+  await prisma.notificationDelivery.update({
+    where: {
+      tenantId_id: {
+        tenantId: base.tenant.id,
+        id: delivery.delivery!.id
+      }
+    },
+    data: {
+      status: NotificationDeliveryStatus.PROCESSING,
+      lastAttemptAt: new Date("2026-01-01T00:00:00.000Z")
+    }
+  });
+
+  const first = await markStaleWhatsappDeliveriesUnknown({
+    tenantId: base.tenant.id,
+    now: new Date("2026-01-01T01:00:00.000Z"),
+    staleMinutes: 15
+  });
+  const second = await markStaleWhatsappDeliveriesUnknown({
+    tenantId: base.tenant.id,
+    now: new Date("2026-01-01T01:00:00.000Z"),
+    staleMinutes: 15
+  });
+  const updated = await prisma.notificationDelivery.findUniqueOrThrow({
+    where: {
+      tenantId_id: {
+        tenantId: base.tenant.id,
+        id: delivery.delivery!.id
+      }
+    }
+  });
+
+  assert.equal(first.markedUnknown, 1);
+  assert.equal(second.markedUnknown, 0);
+  assert.equal(updated.status, NotificationDeliveryStatus.UNKNOWN);
 });
 
 test("notificacion sin usuario no crea delivery y notificacion inexistente queda skipped", async () => {

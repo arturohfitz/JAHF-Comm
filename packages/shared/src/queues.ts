@@ -58,7 +58,7 @@ export const defaultNotificationDeliveryJobOptions: JobsOptions = {
   attempts: 3,
   backoff: {
     type: "exponential",
-    delay: 30000
+    delay: 60000
   },
   removeOnComplete: {
     age: 60 * 60,

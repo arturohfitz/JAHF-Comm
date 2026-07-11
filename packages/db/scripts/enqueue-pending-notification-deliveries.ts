@@ -6,8 +6,13 @@ import {
   createNotificationDeliveryQueue
 } from "@jahf-comm/shared/queues";
 
-import { NotificationChannel, prisma } from "../src/index.js";
+import {
+  NotificationChannel,
+  NotificationDeliveryStatus,
+  prisma
+} from "../src/index.js";
 import { customerAlertSource } from "../src/customer-alerts.js";
+import { getWhatsappAlertRuntimeConfig } from "../src/notification-deliveries.js";
 
 config({ path: [".env", "../../.env"] });
 
@@ -27,6 +32,8 @@ async function main() {
     Number.isFinite(batchSizeValue) && batchSizeValue > 0
       ? Math.min(batchSizeValue, 500)
       : 100;
+  const now = new Date();
+  const runtime = getWhatsappAlertRuntimeConfig();
   const notifications = await prisma.notification.findMany({
     where: {
       ...(tenantId ? { tenantId } : {}),
@@ -50,17 +57,56 @@ async function main() {
       tenantId: true
     }
   });
+  const retryableDeliveries = await prisma.notificationDelivery.findMany({
+    where: {
+      ...(tenantId ? { tenantId } : {}),
+      channel: NotificationChannel.WHATSAPP,
+      notification: {
+        metadata: {
+          path: ["source"],
+          equals: customerAlertSource
+        }
+      },
+      OR: [
+        {
+          status: NotificationDeliveryStatus.PENDING,
+          OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }]
+        },
+        {
+          status: NotificationDeliveryStatus.FAILED,
+          nextAttemptAt: { lte: now },
+          attemptCount: { lt: runtime.maxRetries },
+          metadata: {
+            path: ["retryable"],
+            equals: true
+          }
+        }
+      ]
+    },
+    orderBy: { createdAt: "asc" },
+    take: batchSize,
+    select: {
+      tenantId: true,
+      notificationId: true
+    }
+  });
   const queue = createNotificationDeliveryQueue();
   let enqueued = 0;
+  const payloads = [
+    ...notifications.map((notification) => ({
+      tenantId: notification.tenantId,
+      notificationId: notification.id,
+      channel: "WHATSAPP" as const
+    })),
+    ...retryableDeliveries.map((delivery) => ({
+      tenantId: delivery.tenantId,
+      notificationId: delivery.notificationId,
+      channel: "WHATSAPP" as const
+    }))
+  ];
 
   try {
-    for (const notification of notifications) {
-      const payload = {
-        tenantId: notification.tenantId,
-        notificationId: notification.id,
-        channel: "WHATSAPP" as const
-      };
-
+    for (const payload of payloads) {
       await queue.add(DELIVER_NOTIFICATION_WHATSAPP_JOB, payload, {
         jobId: createNotificationDeliveryJobId(payload)
       });
@@ -72,7 +118,8 @@ async function main() {
   }
 
   console.log("Pending WhatsApp notification delivery jobs enqueued.", {
-    scanned: notifications.length,
+    scannedNotifications: notifications.length,
+    scannedDeliveries: retryableDeliveries.length,
     enqueued
   });
 }

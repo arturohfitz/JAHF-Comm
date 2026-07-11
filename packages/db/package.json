@@ -49,6 +49,7 @@
     "test:customer-alerts": "tsx --test tests/customer-alerts.test.ts",
     "test:notification-deliveries": "tsx --test tests/notification-deliveries.test.ts",
     "notification-deliveries:enqueue": "tsx scripts/enqueue-pending-notification-deliveries.ts",
+    "notification-deliveries:mark-stale": "tsx scripts/mark-stale-whatsapp-deliveries-unknown.ts",
     "production:seed-admin": "tsx scripts/create-admin.ts"
   },
   "dependencies": {
