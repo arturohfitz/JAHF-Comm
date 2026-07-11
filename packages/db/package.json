@@ -21,6 +21,18 @@
     "./customer-alerts": {
       "types": "./src/customer-alerts.ts",
       "import": "./src/customer-alerts.ts"
+    },
+    "./notification-deliveries": {
+      "types": "./src/notification-deliveries.ts",
+      "import": "./src/notification-deliveries.ts"
+    },
+    "./notification-preferences": {
+      "types": "./src/notification-preferences.ts",
+      "import": "./src/notification-preferences.ts"
+    },
+    "./tenant-notification-settings": {
+      "types": "./src/tenant-notification-settings.ts",
+      "import": "./src/tenant-notification-settings.ts"
     }
   },
   "scripts": {
@@ -35,6 +47,8 @@
     "test:customer-memory": "tsx --test tests/customer-memory*.test.ts",
     "test:customer-memory:view": "tsx --test tests/customer-memory-view.test.ts",
     "test:customer-alerts": "tsx --test tests/customer-alerts.test.ts",
+    "test:notification-deliveries": "tsx --test tests/notification-deliveries.test.ts",
+    "notification-deliveries:enqueue": "tsx scripts/enqueue-pending-notification-deliveries.ts",
     "production:seed-admin": "tsx scripts/create-admin.ts"
   },
   "dependencies": {

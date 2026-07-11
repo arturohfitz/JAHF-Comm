@@ -2,11 +2,17 @@ import {
   AIIntent,
   CustomerReturnType,
   MembershipRole,
+  NotificationSeverity,
   NotificationType,
   Prisma,
   prisma,
   Urgency
 } from "@jahf-comm/db";
+import {
+  DELIVER_NOTIFICATION_WHATSAPP_JOB,
+  createNotificationDeliveryJobId,
+  createNotificationDeliveryQueue
+} from "@jahf-comm/shared/queues";
 import {
   formatInactivity,
   getCustomerMemoryView,
@@ -367,6 +373,18 @@ function getNotificationType(severity: AlertSeverity) {
   return NotificationType.AI_SUGGESTION;
 }
 
+function getNotificationSeverity(severity: AlertSeverity) {
+  if (severity === "urgent") {
+    return NotificationSeverity.URGENT;
+  }
+
+  if (severity === "high") {
+    return NotificationSeverity.HIGH;
+  }
+
+  return NotificationSeverity.MEDIUM;
+}
+
 function createDeduplicationKey(input: {
   tenantId: string;
   contactId: string;
@@ -420,6 +438,34 @@ async function isInCooldown(input: {
   });
 
   return Boolean(existing);
+}
+
+async function enqueueWhatsappAlertDelivery(input: {
+  tenantId: string;
+  notificationId: string;
+}) {
+  let queue: ReturnType<typeof createNotificationDeliveryQueue> | null = null;
+
+  try {
+    queue = createNotificationDeliveryQueue();
+    const payload = {
+      tenantId: input.tenantId,
+      notificationId: input.notificationId,
+      channel: "WHATSAPP" as const
+    };
+
+    await queue.add(DELIVER_NOTIFICATION_WHATSAPP_JOB, payload, {
+      jobId: createNotificationDeliveryJobId(payload)
+    });
+  } catch (error) {
+    console.warn("Could not enqueue WhatsApp alert delivery.", {
+      tenantId: input.tenantId,
+      notificationId: input.notificationId,
+      message: error instanceof Error ? error.message : "Unknown error"
+    });
+  } finally {
+    await queue?.disconnect();
+  }
 }
 
 export async function createCustomerAlerts(input: CreateCustomerAlertsInput) {
@@ -521,11 +567,12 @@ export async function createCustomerAlerts(input: CreateCustomerAlertsInput) {
     } satisfies Prisma.InputJsonObject;
 
     try {
-      await prisma.notification.create({
+      const notification = await prisma.notification.create({
         data: {
           tenantId: input.tenantId,
           userId,
           type: getNotificationType(input.evaluation.severity),
+          severity: getNotificationSeverity(input.evaluation.severity),
           title: buildAlertTitle({
             contactName:
               conversation.contact.name ??
@@ -540,6 +587,10 @@ export async function createCustomerAlerts(input: CreateCustomerAlertsInput) {
           deduplicationKey,
           metadata
         }
+      });
+      await enqueueWhatsappAlertDelivery({
+        tenantId: input.tenantId,
+        notificationId: notification.id
       });
       created += 1;
     } catch (error) {
