@@ -1,5 +1,10 @@
 import { DEFAULT_OPENAI_MODEL, classifyConversation } from "@jahf-comm/ai";
 import {
+  applyAIClassificationToMemory,
+  refreshCustomerMemory
+} from "@jahf-comm/db/customer-memory";
+import { evaluateAndCreateCustomerAlerts } from "@jahf-comm/db/customer-alerts";
+import {
   AuditAction,
   CustomerEventType,
   NotificationType,
@@ -19,6 +24,15 @@ type ClassificationOutcome =
       aiClassificationId: string;
       mode: string;
     };
+
+function evaluateAlertsForPayload(payload: AiClassificationJobPayload) {
+  return evaluateAndCreateCustomerAlerts({
+    tenantId: payload.tenantId,
+    contactId: payload.contactId,
+    conversationId: payload.conversationId,
+    triggerMessageId: payload.messageId
+  });
+}
 
 async function loadClassificationContext(payload: AiClassificationJobPayload) {
   const message = await prisma.message.findFirstOrThrow({
@@ -113,6 +127,12 @@ async function loadClassificationContext(payload: AiClassificationJobPayload) {
 export async function processAiClassificationJob(
   payload: AiClassificationJobPayload
 ): Promise<ClassificationOutcome> {
+  await refreshCustomerMemory({
+    tenantId: payload.tenantId,
+    contactId: payload.contactId,
+    currentMessageId: payload.messageId
+  });
+
   const existing = await prisma.aIClassification.findFirst({
     where: {
       tenantId: payload.tenantId,
@@ -124,6 +144,12 @@ export async function processAiClassificationJob(
   });
 
   if (existing) {
+    await applyAIClassificationToMemory({
+      tenantId: payload.tenantId,
+      aiClassificationId: existing.id
+    });
+    await evaluateAlertsForPayload(payload);
+
     return {
       status: "skipped_existing",
       aiClassificationId: existing.id
@@ -181,7 +207,10 @@ export async function processAiClassificationJob(
       forceMock: !process.env.OPENAI_API_KEY,
       timeoutMs: 8000
     }
-  );
+  ).catch(async (error) => {
+    await evaluateAlertsForPayload(payload);
+    throw error;
+  });
   const classification = result.classification;
 
   const saved = await prisma.$transaction(async (tx) => {
@@ -279,11 +308,23 @@ export async function processAiClassificationJob(
   });
 
   if (saved.status === "skipped_existing") {
+    await applyAIClassificationToMemory({
+      tenantId: payload.tenantId,
+      aiClassificationId: saved.id
+    });
+    await evaluateAlertsForPayload(payload);
+
     return {
       status: "skipped_existing",
       aiClassificationId: saved.id
     };
   }
+
+  await applyAIClassificationToMemory({
+    tenantId: payload.tenantId,
+    aiClassificationId: saved.id
+  });
+  await evaluateAlertsForPayload(payload);
 
   return {
     status: "created",

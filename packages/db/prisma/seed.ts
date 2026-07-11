@@ -1,6 +1,10 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { hashPassword } from "@jahf-comm/shared/passwords";
 import {
+  applyAIClassificationToMemory,
+  refreshCustomerMemory
+} from "../src/customer-memory.js";
+import {
   AIIntent,
   AuditAction,
   ContactStage,
@@ -263,7 +267,7 @@ async function main() {
     }
   });
 
-  await prisma.aIClassification.create({
+  const demoClassification = await prisma.aIClassification.create({
     data: {
       tenantId: tenant.id,
       conversationId: conversations[0].id,
@@ -329,6 +333,18 @@ async function main() {
         slug: tenant.slug
       }
     }
+  });
+
+  for (const contact of contacts) {
+    await refreshCustomerMemory({
+      tenantId: tenant.id,
+      contactId: contact.id
+    });
+  }
+
+  await applyAIClassificationToMemory({
+    tenantId: tenant.id,
+    aiClassificationId: demoClassification.id
   });
 }
 

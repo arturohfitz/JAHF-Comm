@@ -9,6 +9,30 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./customer-memory": {
+      "types": "./src/customer-memory.ts",
+      "import": "./src/customer-memory.ts"
+    },
+    "./customer-memory-view": {
+      "types": "./src/customer-memory-view.ts",
+      "import": "./src/customer-memory-view.ts"
+    },
+    "./customer-alerts": {
+      "types": "./src/customer-alerts.ts",
+      "import": "./src/customer-alerts.ts"
+    },
+    "./notification-deliveries": {
+      "types": "./src/notification-deliveries.ts",
+      "import": "./src/notification-deliveries.ts"
+    },
+    "./notification-preferences": {
+      "types": "./src/notification-preferences.ts",
+      "import": "./src/notification-preferences.ts"
+    },
+    "./tenant-notification-settings": {
+      "types": "./src/tenant-notification-settings.ts",
+      "import": "./src/tenant-notification-settings.ts"
     }
   },
   "scripts": {
@@ -19,6 +43,13 @@
     "db:migrate": "prisma migrate deploy --schema prisma/schema.prisma",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio --schema prisma/schema.prisma",
+    "customer-memory:backfill": "tsx scripts/backfill-customer-memory.ts",
+    "test:customer-memory": "tsx --test tests/customer-memory*.test.ts",
+    "test:customer-memory:view": "tsx --test tests/customer-memory-view.test.ts",
+    "test:customer-alerts": "tsx --test tests/customer-alerts.test.ts",
+    "test:notification-deliveries": "tsx --test tests/notification-deliveries.test.ts",
+    "notification-deliveries:enqueue": "tsx scripts/enqueue-pending-notification-deliveries.ts",
+    "notification-deliveries:mark-stale": "tsx scripts/mark-stale-whatsapp-deliveries-unknown.ts",
     "production:seed-admin": "tsx scripts/create-admin.ts"
   },
   "dependencies": {

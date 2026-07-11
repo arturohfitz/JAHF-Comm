@@ -1,6 +1,7 @@
 import { logoutAction } from "@/app/login/actions";
 import { requireAuth } from "@/lib/auth";
 
+import { NotificationBell } from "./notification-bell";
 import { Sidebar } from "./sidebar";
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
@@ -23,6 +24,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
               </h1>
             </div>
             <div className="flex flex-wrap items-center gap-3">
+              <NotificationBell />
               <div className="rounded-md border bg-card px-3 py-2 text-sm">
                 <span className="text-muted-foreground">Usuario:</span>{" "}
                 <span className="font-medium">
