@@ -1,15 +1,16 @@
 import { prisma } from "@jahf-comm/db";
+import { pathToFileURL } from "node:url";
 
 import {
   controlledWhatsappTestConfirmation,
   runControlledWhatsappAlertTest,
+  type ControlledWhatsappAlertTestInput,
   type ControlledWhatsappAlertTestMode
 } from "../src/controlled-whatsapp-alert-test";
 
-function readArg(name: string) {
+function readArg(argv: string[], name: string) {
   const prefix = `--${name}=`;
-  const inline = process.argv
-    .slice(2)
+  const inline = argv
     .find((arg) => arg.startsWith(prefix))
     ?.slice(prefix.length);
 
@@ -17,17 +18,17 @@ function readArg(name: string) {
     return inline;
   }
 
-  const index = process.argv.indexOf(`--${name}`);
+  const index = argv.indexOf(`--${name}`);
 
-  return index >= 0 ? process.argv[index + 1] : undefined;
+  return index >= 0 ? argv[index + 1] : undefined;
 }
 
-function hasFlag(name: string) {
-  return process.argv.includes(`--${name}`);
+function hasFlag(argv: string[], name: string) {
+  return argv.includes(`--${name}`);
 }
 
-function readMode(): ControlledWhatsappAlertTestMode {
-  const mode = readArg("mode");
+function readMode(argv: string[]): ControlledWhatsappAlertTestMode {
+  const mode = readArg(argv, "mode");
 
   if (mode === "preflight" || mode === "live") {
     return mode;
@@ -36,34 +37,45 @@ function readMode(): ControlledWhatsappAlertTestMode {
   throw new Error("Use --mode preflight or --mode live.");
 }
 
-async function main() {
-  const mode = readMode();
-  const tenantId = readArg("tenantId");
-  const actorUserId = readArg("actorUserId");
-  const targetUserId = readArg("targetUserId");
+export function readControlledWhatsappCliInput(
+  argv = process.argv.slice(2)
+): ControlledWhatsappAlertTestInput {
+  const mode = readMode(argv);
+  const tenantId = readArg(argv, "tenantId");
+  const actorUserId = readArg(argv, "actorUserId");
+  const targetUserId = readArg(argv, "targetUserId");
 
   if (!tenantId || !actorUserId || !targetUserId) {
     throw new Error("--tenantId, --actorUserId and --targetUserId are required.");
   }
 
-  const result = await runControlledWhatsappAlertTest({
+  return {
     mode,
     tenantId,
     actorUserId,
     targetUserId,
-    testRunId: readArg("testRunId"),
-    confirm: readArg("confirm"),
-    confirmDedicatedNoWebhook: hasFlag("confirmDedicatedNoWebhook")
-  });
-
-  console.log(JSON.stringify(result, null, 2));
+    testRunId: readArg(argv, "testRunId"),
+    confirm: readArg(argv, "confirm"),
+    confirmDedicatedNoWebhook: hasFlag(argv, "confirmDedicatedNoWebhook")
+  };
 }
 
-void main().catch(async (error) => {
-  console.error("Controlled WhatsApp alert test failed.", {
-    message: error instanceof Error ? error.message : "Unknown error",
-    requiredConfirmation: controlledWhatsappTestConfirmation
-  });
+async function main() {
+  const result = await runControlledWhatsappAlertTest(
+    readControlledWhatsappCliInput()
+  );
+
+  console.log(JSON.stringify(result, null, 2));
   await prisma.$disconnect();
-  process.exit(1);
-});
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void main().catch(async (error) => {
+    console.error("Controlled WhatsApp alert test failed.", {
+      message: error instanceof Error ? error.message : "Unknown error",
+      requiredConfirmation: controlledWhatsappTestConfirmation
+    });
+    await prisma.$disconnect();
+    process.exit(1);
+  });
+}
