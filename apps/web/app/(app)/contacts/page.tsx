@@ -1,4 +1,4 @@
-import { prisma } from "@jahf-comm/db";
+import { ContactStage, prisma } from "@jahf-comm/db";
 
 import { DataUnavailable } from "@/components/app/data-unavailable";
 import { PageHeader } from "@/components/app/page-header";
@@ -8,11 +8,22 @@ import { formatDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
+type ContactRow = {
+  id: string;
+  name: string;
+  phoneNumber: string | null;
+  normalizedPhoneNumber: string;
+  email: string | null;
+  stage: ContactStage;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export default async function ContactsPage() {
   try {
     const { tenant } = await requireAuth();
 
-    const contacts = await prisma.contact.findMany({
+    const contacts: ContactRow[] = await prisma.contact.findMany({
       where: { tenantId: tenant.id },
       orderBy: { createdAt: "desc" },
       select: {

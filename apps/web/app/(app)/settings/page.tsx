@@ -1,4 +1,4 @@
-import { prisma } from "@jahf-comm/db";
+import { WhatsAppAccountStatus, WhatsAppProvider, prisma } from "@jahf-comm/db";
 import Link from "next/link";
 
 import { AccessDenied } from "@/components/app/access-denied";
@@ -9,6 +9,18 @@ import { canManageSettings, requireAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
+
+type WhatsAppAccountSummary = {
+  id: string;
+  name: string;
+  displayName: string | null;
+  phoneNumber: string;
+  provider: WhatsAppProvider;
+  status: WhatsAppAccountStatus;
+  instanceName: string | null;
+  providerInstanceId: string | null;
+  updatedAt: Date;
+};
 
 export default async function SettingsPage() {
   const { tenant, membership } = await requireAuth();
@@ -26,7 +38,8 @@ export default async function SettingsPage() {
   }
 
   try {
-    const accounts = await prisma.whatsAppAccount.findMany({
+    const accounts: WhatsAppAccountSummary[] =
+      await prisma.whatsAppAccount.findMany({
       where: { tenantId: tenant.id },
       orderBy: { createdAt: "asc" },
       select: {

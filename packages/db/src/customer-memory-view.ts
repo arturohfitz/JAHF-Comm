@@ -13,6 +13,10 @@ type MessageOrder = {
   createdAt: Date;
 };
 
+type ContactMessageOrder = MessageOrder & {
+  contactId: string;
+};
+
 type CustomerMemoryRecord = {
   id: string;
   contactId: string;
@@ -401,7 +405,7 @@ async function getLatestInboundMessages(input: {
     return new Map<string, MessageOrder>();
   }
 
-  const messages = await prisma.message.findMany({
+  const messages: ContactMessageOrder[] = await prisma.message.findMany({
     where: {
       tenantId: input.tenantId,
       contactId: {
@@ -446,7 +450,7 @@ async function getProcessedMessages(input: {
     return new Map<string, MessageOrder>();
   }
 
-  const messages = await prisma.message.findMany({
+  const messages: MessageOrder[] = await prisma.message.findMany({
     where: {
       tenantId: input.tenantId,
       contactId: {

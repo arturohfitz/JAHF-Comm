@@ -1,4 +1,4 @@
-import { prisma } from "@jahf-comm/db";
+import { Prisma, prisma } from "@jahf-comm/db";
 import { NextResponse } from "next/server";
 
 import { requireAuth } from "@/lib/auth";
@@ -14,13 +14,23 @@ function readHref(metadata: unknown) {
   return typeof href === "string" && href.startsWith("/inbox") ? href : null;
 }
 
+type NotificationSummary = {
+  id: string;
+  title: string;
+  description: string | null;
+  isRead: boolean;
+  createdAt: Date;
+  metadata: Prisma.JsonValue | null;
+};
+
 export async function GET() {
   const { tenant, user, membership } = await requireAuth();
   const scope = getNotificationQueryScope({
     tenantId: tenant.id,
     userId: user.id
   });
-  const [unreadCount, notifications] = await Promise.all([
+  const [unreadCount, notifications]: [number, NotificationSummary[]] =
+    await Promise.all([
     prisma.notification.count({
       where: {
         ...scope,

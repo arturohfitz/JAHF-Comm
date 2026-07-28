@@ -165,7 +165,7 @@ export async function createWhatsAppAccount(formData: FormData) {
 
   const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await assertUniqueWhatsAppAccount(tx, {
       tenantId: tenant.id,
       provider,
@@ -244,7 +244,7 @@ export async function updateWhatsAppAccountAction(formData: FormData) {
 
   const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const current = await tx.whatsAppAccount.findFirstOrThrow({
       where: {
         id: accountId,
@@ -337,7 +337,7 @@ export async function disconnectWhatsAppAccountAction(formData: FormData) {
     throw new Error("Cuenta WhatsApp requerida.");
   }
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const current = await tx.whatsAppAccount.findFirstOrThrow({
       where: {
         id: accountId,
@@ -430,7 +430,7 @@ export async function updateTenantWhatsappAlertSettingsAction(
     }
   }
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const before = await tx.tenantNotificationSettings.findUnique({
       where: { tenantId: tenant.id }
     });

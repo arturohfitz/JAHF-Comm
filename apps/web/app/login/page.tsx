@@ -1,14 +1,15 @@
-import { LogIn, ShieldCheck } from "lucide-react";
+import { LogIn, Mail, ShieldCheck } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { getCurrentSession } from "@/lib/auth";
 
-import { loginAction } from "./actions";
+import { loginAction, requestPasswordRecoveryAction } from "./actions";
 
 type LoginPageProps = {
   searchParams?: Promise<{
     error?: string;
+    recovery?: string;
   }>;
 };
 
@@ -24,6 +25,31 @@ function getErrorMessage(error?: string) {
   return null;
 }
 
+function getRecoveryMessage(recovery?: string) {
+  if (recovery === "missing") {
+    return {
+      tone: "error" as const,
+      text: "Escribe un email valido para solicitar ayuda."
+    };
+  }
+
+  if (recovery === "error") {
+    return {
+      tone: "error" as const,
+      text: "No se pudo enviar la solicitud. Revisa la configuracion SMTP del servidor."
+    };
+  }
+
+  if (recovery === "sent") {
+    return {
+      tone: "success" as const,
+      text: "Solicitud enviada al administrador maestro."
+    };
+  }
+
+  return null;
+}
+
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const session = await getCurrentSession();
 
@@ -33,6 +59,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   const params = await searchParams;
   const errorMessage = getErrorMessage(params?.error);
+  const recoveryMessage = getRecoveryMessage(params?.recovery);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-muted/35 px-5 py-10">
@@ -77,6 +104,46 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <Button className="w-full" type="submit">
             <LogIn aria-hidden="true" className="h-4 w-4" />
             Entrar
+          </Button>
+        </form>
+
+        <div className="my-6 border-t" />
+
+        <form action={requestPasswordRecoveryAction} className="grid gap-4">
+          <div>
+            <h2 className="text-base font-semibold">Recuperar contrasena</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Enviaremos la solicitud al administrador maestro para verificar y
+              restablecer el acceso.
+            </p>
+          </div>
+
+          {recoveryMessage ? (
+            <p
+              className={
+                recoveryMessage.tone === "success"
+                  ? "rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700"
+                  : "rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              }
+            >
+              {recoveryMessage.text}
+            </p>
+          ) : null}
+
+          <label className="grid gap-2 text-sm font-medium">
+            Email de la cuenta
+            <input
+              autoComplete="email"
+              className="h-10 rounded-md border bg-background px-3 text-sm"
+              name="recoveryEmail"
+              required
+              type="email"
+            />
+          </label>
+
+          <Button className="w-full" type="submit" variant="outline">
+            <Mail aria-hidden="true" className="h-4 w-4" />
+            Solicitar recuperacion
           </Button>
         </form>
       </section>

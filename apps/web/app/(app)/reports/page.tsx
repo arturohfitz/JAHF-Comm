@@ -1,4 +1,11 @@
-import { prisma } from "@jahf-comm/db";
+import {
+  AIIntent,
+  ContactStage,
+  ConversationStage,
+  PaymentStatus,
+  SupportStatus,
+  prisma
+} from "@jahf-comm/db";
 
 import { DataUnavailable } from "@/components/app/data-unavailable";
 import { PageHeader } from "@/components/app/page-header";
@@ -37,6 +44,17 @@ function ReportList({
   );
 }
 
+type GroupCount = {
+  _count: {
+    _all: number;
+  };
+};
+type ContactsByStageRow = GroupCount & { stage: ContactStage };
+type ConversationsByStageRow = GroupCount & { stage: ConversationStage };
+type PaymentsByStatusRow = GroupCount & { status: PaymentStatus };
+type TicketsByStatusRow = GroupCount & { status: SupportStatus };
+type AiIntentionsRow = GroupCount & { detectedIntent: AIIntent };
+
 export default async function ReportsPage() {
   try {
     const { tenant } = await requireAuth();
@@ -47,6 +65,12 @@ export default async function ReportsPage() {
       paymentsByStatus,
       ticketsByStatus,
       aiIntentions
+    ]: [
+      ContactsByStageRow[],
+      ConversationsByStageRow[],
+      PaymentsByStatusRow[],
+      TicketsByStatusRow[],
+      AiIntentionsRow[]
     ] = await Promise.all([
       prisma.contact.groupBy({
         by: ["stage"],

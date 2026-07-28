@@ -1,4 +1,4 @@
-import { prisma } from "@jahf-comm/db";
+import { PaymentStatus, prisma } from "@jahf-comm/db";
 
 import { DataUnavailable } from "@/components/app/data-unavailable";
 import { PageHeader } from "@/components/app/page-header";
@@ -8,11 +8,24 @@ import { formatCurrency, formatDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
+type PaymentRow = {
+  id: string;
+  amountDueCents: number;
+  amountPaidCents: number;
+  currency: string;
+  dueDate: Date | null;
+  status: PaymentStatus;
+  reference: string | null;
+  contact: {
+    name: string;
+  };
+};
+
 export default async function PaymentsPage() {
   try {
     const { tenant } = await requireAuth();
 
-    const payments = await prisma.payment.findMany({
+    const payments: PaymentRow[] = await prisma.payment.findMany({
       where: { tenantId: tenant.id },
       orderBy: { createdAt: "desc" },
       select: {

@@ -1,10 +1,15 @@
 import {
+  AIIntent,
   ContactStage,
   ConversationStage,
+  CustomerEventType,
   MessageDirection,
+  MessageType,
   PaymentStatus,
   prisma,
-  SupportStatus
+  SaleStatus,
+  SupportStatus,
+  Urgency
 } from "@jahf-comm/db";
 import {
   formatInactivity,
@@ -46,6 +51,115 @@ type InboxPageProps = {
   }>;
 };
 
+type ConversationListItem = {
+  id: string;
+  stage: ConversationStage;
+  lastMessageAt: Date | null;
+  contact: {
+    id: string;
+    name: string;
+    phoneNumber: string | null;
+    normalizedPhoneNumber: string;
+    stage: ContactStage;
+  };
+  messages: Array<{
+    text: string | null;
+    type: MessageType;
+    sentAt: Date;
+  }>;
+  aiClassifications: Array<{
+    urgency: Urgency;
+    detectedIntent: AIIntent;
+  }>;
+  _count: {
+    messages: number;
+  };
+};
+
+type MembershipOption = {
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+  };
+};
+
+type SelectedConversation = {
+  id: string;
+  stage: ConversationStage;
+  subject: string | null;
+  assignedUserId: string | null;
+  lastMessageAt: Date | null;
+  createdAt: Date;
+  contact: {
+    id: string;
+    name: string;
+    phoneNumber: string | null;
+    normalizedPhoneNumber: string;
+    email: string | null;
+    stage: ContactStage;
+    createdAt: Date;
+    updatedAt: Date;
+  };
+  assignedUser: {
+    id: string;
+    name: string | null;
+    email: string;
+  } | null;
+  messages: Array<{
+    id: string;
+    direction: MessageDirection;
+    type: MessageType;
+    text: string | null;
+    sentAt: Date;
+  }>;
+  sales: Array<{
+    id: string;
+    product: string;
+    amountCents: number;
+    currency: string;
+    status: SaleStatus;
+    soldAt: Date;
+  }>;
+  supportTickets: Array<{
+    id: string;
+    title: string;
+    status: SupportStatus;
+    priority: Urgency;
+    openedAt: Date;
+  }>;
+  aiClassifications: Array<{
+    id: string;
+    detectedIntent: AIIntent;
+    urgency: Urgency;
+    confidence: number;
+    summary: string | null;
+    recommendedAction: string | null;
+    rawResult: unknown;
+    createdAt: Date;
+  }>;
+  customerEvents: Array<{
+    id: string;
+    type: CustomerEventType;
+    title: string;
+    description: string | null;
+    createdAt: Date;
+    actor: {
+      name: string | null;
+      email: string;
+    } | null;
+  }>;
+};
+
+type ContactPayment = {
+  id: string;
+  amountDueCents: number;
+  amountPaidCents: number;
+  currency: string;
+  dueDate: Date | null;
+  status: PaymentStatus;
+};
+
 const openSupportStatuses = [
   SupportStatus.OPEN,
   SupportStatus.IN_PROGRESS,
@@ -62,6 +176,9 @@ const pendingPaymentStatuses: PaymentStatus[] = [
   PaymentStatus.PARTIAL,
   PaymentStatus.OVERDUE
 ];
+const contactStageOptions: ContactStage[] = Object.values(ContactStage);
+const conversationStageOptions: ConversationStage[] =
+  Object.values(ConversationStage);
 
 function getConversationIndicator(stage: ConversationStage) {
   if (stage === ConversationStage.ESCALATED) {
@@ -103,7 +220,10 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
     const requestedConversationId = params?.conversationId;
     const { tenant } = await requireAuth();
 
-    const [conversations, memberships] = await Promise.all([
+    const [conversations, memberships]: [
+      ConversationListItem[],
+      MembershipOption[]
+    ] = await Promise.all([
       prisma.conversation.findMany({
         where: { tenantId: tenant.id },
         orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
@@ -176,7 +296,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
         : null
       : conversations[0]?.id ?? null;
 
-    const selectedConversation = selectedConversationId
+    const selectedConversation: SelectedConversation | null = selectedConversationId
       ? await prisma.conversation.findFirst({
           where: {
             id: selectedConversationId,
@@ -282,7 +402,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
       ? customerMemoryViews.get(selectedConversation.contact.id) ?? null
       : null;
 
-    const contactPayments = selectedConversation
+    const contactPayments: ContactPayment[] = selectedConversation
       ? await prisma.payment.findMany({
           where: {
             tenantId: tenant.id,
@@ -600,7 +720,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                         defaultValue={selectedConversation.contact.stage}
                         name="stage"
                       >
-                        {Object.values(ContactStage).map((stage) => (
+                        {contactStageOptions.map((stage) => (
                           <option key={stage} value={stage}>
                             {humanizeEnum(stage)}
                           </option>
@@ -626,7 +746,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                         defaultValue={selectedConversation.stage}
                         name="stage"
                       >
-                        {Object.values(ConversationStage).map((stage) => (
+                        {conversationStageOptions.map((stage) => (
                           <option key={stage} value={stage}>
                             {humanizeEnum(stage)}
                           </option>

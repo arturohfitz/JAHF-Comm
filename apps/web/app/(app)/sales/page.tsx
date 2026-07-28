@@ -1,4 +1,4 @@
-import { prisma } from "@jahf-comm/db";
+import { SaleStatus, prisma } from "@jahf-comm/db";
 
 import { DataUnavailable } from "@/components/app/data-unavailable";
 import { PageHeader } from "@/components/app/page-header";
@@ -8,11 +8,23 @@ import { formatCurrency, formatDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
+type SaleRow = {
+  id: string;
+  product: string;
+  amountCents: number;
+  currency: string;
+  soldAt: Date;
+  status: SaleStatus;
+  contact: {
+    name: string;
+  };
+};
+
 export default async function SalesPage() {
   try {
     const { tenant } = await requireAuth();
 
-    const sales = await prisma.sale.findMany({
+    const sales: SaleRow[] = await prisma.sale.findMany({
       where: { tenantId: tenant.id },
       orderBy: { soldAt: "desc" },
       select: {

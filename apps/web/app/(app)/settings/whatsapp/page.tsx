@@ -23,6 +23,62 @@ import {
 
 export const dynamic = "force-dynamic";
 
+const notificationSeverityOptions = Object.values(
+  NotificationSeverity
+) as NotificationSeverity[];
+const whatsappAccountStatusOptions = Object.values(
+  WhatsAppAccountStatus
+) as WhatsAppAccountStatus[];
+const whatsappProviderOptions = Object.values(
+  WhatsAppProvider
+) as WhatsAppProvider[];
+
+type WhatsAppAccountRow = {
+  id: string;
+  name: string;
+  displayName: string | null;
+  phoneNumber: string;
+  provider: WhatsAppProvider;
+  status: WhatsAppAccountStatus;
+  providerInstanceId: string | null;
+  instanceName: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type TenantAlertSettings = {
+  whatsappAlertsAccountId: string | null;
+  whatsappAlertsEnabled: boolean;
+};
+
+type NotificationPreferenceRow = {
+  whatsappEnabled: boolean;
+  whatsappPhone: string | null;
+  minimumSeverity: NotificationSeverity;
+  returningCustomerEnabled: boolean;
+  supportEnabled: boolean;
+  highPriorityEnabled: boolean;
+  negativeSentimentEnabled: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStart: string | null;
+  quietHoursEnd: string | null;
+  timezone: string;
+  allowUrgentDuringQuietHours: boolean;
+};
+
+type NotificationPreferenceFlag =
+  | "whatsappEnabled"
+  | "returningCustomerEnabled"
+  | "supportEnabled"
+  | "highPriorityEnabled"
+  | "negativeSentimentEnabled"
+  | "quietHoursEnabled"
+  | "allowUrgentDuringQuietHours";
+
+type ConversationAccountRow = {
+  whatsappAccountId: string;
+};
+
 function CreateWhatsAppAccountForm() {
   return (
     <article
@@ -71,7 +127,7 @@ function CreateWhatsAppAccountForm() {
             defaultValue={WhatsAppProvider.EVOLUTION}
             name="provider"
           >
-            {Object.values(WhatsAppProvider).map((provider) => (
+            {whatsappProviderOptions.map((provider) => (
               <option key={provider} value={provider}>
                 {provider}
               </option>
@@ -86,7 +142,7 @@ function CreateWhatsAppAccountForm() {
             defaultValue={WhatsAppAccountStatus.PENDING}
             name="status"
           >
-            {Object.values(WhatsAppAccountStatus).map((status) => (
+            {whatsappAccountStatusOptions.map((status) => (
               <option key={status} value={status}>
                 {status}
               </option>
@@ -143,7 +199,11 @@ function getSafeWhatsappRuntimeState() {
   return {
     enabled,
     dryRun,
-    mode: !enabled ? ("DISABLED" as const) : dryRun ? ("DRY_RUN" as const) : ("LIVE" as const)
+    mode: !enabled
+      ? ("DISABLED" as const)
+      : dryRun
+        ? ("DRY_RUN" as const)
+        : ("LIVE" as const)
   };
 }
 
@@ -152,17 +212,8 @@ function TenantAlertSettingsForm({
   settings,
   conversationAccountIds
 }: {
-  accounts: Array<{
-    id: string;
-    displayName: string | null;
-    name: string;
-    status: WhatsAppAccountStatus;
-    instanceName: string | null;
-  }>;
-  settings: {
-    whatsappAlertsAccountId: string | null;
-    whatsappAlertsEnabled: boolean;
-  } | null;
+  accounts: WhatsAppAccountRow[];
+  settings: TenantAlertSettings | null;
   conversationAccountIds: Set<string>;
 }) {
   return (
@@ -237,22 +288,21 @@ function MyNotificationPreferenceForm({
   preference
 }: {
   role: MembershipRole;
-  preference: {
-    whatsappEnabled: boolean;
-    whatsappPhone: string | null;
-    minimumSeverity: NotificationSeverity;
-    returningCustomerEnabled: boolean;
-    supportEnabled: boolean;
-    highPriorityEnabled: boolean;
-    negativeSentimentEnabled: boolean;
-    quietHoursEnabled: boolean;
-    quietHoursStart: string | null;
-    quietHoursEnd: string | null;
-    timezone: string;
-    allowUrgentDuringQuietHours: boolean;
-  } | null;
+  preference: NotificationPreferenceRow | null;
 }) {
   const isViewer = role === MembershipRole.VIEWER;
+  const preferenceFlags: Array<[NotificationPreferenceFlag, string]> = [
+    ["whatsappEnabled", "Activar WhatsApp"],
+    ["returningCustomerEnabled", "Clientes recurrentes"],
+    ["supportEnabled", "Soporte"],
+    ["highPriorityEnabled", "Prioridad alta"],
+    ["negativeSentimentEnabled", "Sentimiento negativo"],
+    ["quietHoursEnabled", "Horario silencioso"],
+    [
+      "allowUrgentDuringQuietHours",
+      "Permitir urgentes en horario silencioso"
+    ]
+  ];
 
   return (
     <article className="rounded-md border bg-card p-5">
@@ -291,7 +341,7 @@ function MyNotificationPreferenceForm({
               defaultValue={preference?.minimumSeverity ?? NotificationSeverity.HIGH}
               name="minimumSeverity"
             >
-              {Object.values(NotificationSeverity).map((severity) => (
+              {notificationSeverityOptions.map((severity) => (
                 <option key={severity} value={severity}>
                   {severity}
                 </option>
@@ -299,20 +349,13 @@ function MyNotificationPreferenceForm({
             </select>
           </label>
 
-          {[
-            ["whatsappEnabled", "Activar WhatsApp"],
-            ["returningCustomerEnabled", "Clientes recurrentes"],
-            ["supportEnabled", "Soporte"],
-            ["highPriorityEnabled", "Prioridad alta"],
-            ["negativeSentimentEnabled", "Sentimiento negativo"],
-            ["quietHoursEnabled", "Horario silencioso"],
-            ["allowUrgentDuringQuietHours", "Permitir urgentes en horario silencioso"]
-          ].map(([name, label]) => (
-            <label className="flex items-center gap-3 text-sm font-medium" key={name}>
+          {preferenceFlags.map(([name, label]) => (
+            <label
+              className="flex items-center gap-3 text-sm font-medium"
+              key={name}
+            >
               <input
-                defaultChecked={
-                  Boolean(preference?.[name as keyof NonNullable<typeof preference>])
-                }
+                defaultChecked={Boolean(preference?.[name])}
                 name={name}
                 type="checkbox"
               />
@@ -362,8 +405,12 @@ export default async function WhatsAppSettingsPage() {
   const { tenant, membership, user } = await requireAuth();
 
   try {
-    const [accounts, settings, preference, conversationAccounts] =
-      await Promise.all([
+    const [accounts, settings, preference, conversationAccounts]: [
+      WhatsAppAccountRow[],
+      TenantAlertSettings | null,
+      NotificationPreferenceRow | null,
+      ConversationAccountRow[]
+    ] = await Promise.all([
         prisma.whatsAppAccount.findMany({
           where: { tenantId: tenant.id },
           orderBy: { createdAt: "asc" },
@@ -393,6 +440,20 @@ export default async function WhatsAppSettingsPage() {
               tenantId: tenant.id,
               userId: user.id
             }
+          },
+          select: {
+            whatsappEnabled: true,
+            whatsappPhone: true,
+            minimumSeverity: true,
+            returningCustomerEnabled: true,
+            supportEnabled: true,
+            highPriorityEnabled: true,
+            negativeSentimentEnabled: true,
+            quietHoursEnabled: true,
+            quietHoursStart: true,
+            quietHoursEnd: true,
+            timezone: true,
+            allowUrgentDuringQuietHours: true
           }
         }),
         prisma.conversation.findMany({
@@ -461,8 +522,12 @@ export default async function WhatsAppSettingsPage() {
             </article>
           ) : null}
 
-          {canManageTenantSettings ? accounts.map((account) => (
-            <article className="rounded-md border bg-card p-5" key={account.id}>
+          {canManageTenantSettings
+            ? accounts.map((account) => (
+                <article
+                  className="rounded-md border bg-card p-5"
+                  key={account.id}
+                >
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <h3 className="text-base font-semibold">
@@ -543,7 +608,7 @@ export default async function WhatsAppSettingsPage() {
                     defaultValue={account.status}
                     name="status"
                   >
-                    {Object.values(WhatsAppAccountStatus).map((status) => (
+                    {whatsappAccountStatusOptions.map((status) => (
                       <option key={status} value={status}>
                         {status}
                       </option>
@@ -567,8 +632,9 @@ export default async function WhatsAppSettingsPage() {
                   </Button>
                 </form>
               ) : null}
-            </article>
-          )) : null}
+                </article>
+              ))
+            : null}
         </section>
       </>
     );
