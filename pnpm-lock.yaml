@@ -108,6 +108,9 @@ importers:
       '@jahf-comm/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@jahf-comm/whatsapp':
+        specifier: workspace:*
+        version: link:../../packages/whatsapp
       bullmq:
         specifier: latest
         version: 5.79.3
@@ -193,6 +196,9 @@ importers:
 
   packages/whatsapp:
     devDependencies:
+      tsx:
+        specifier: latest
+        version: 4.23.0
       typescript:
         specifier: 5.9.3
         version: 5.9.3

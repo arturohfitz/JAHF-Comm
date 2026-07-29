@@ -2,12 +2,16 @@ import type { Job } from "bullmq";
 
 import {
   CLASSIFY_CONVERSATION_MESSAGE_JOB,
+  DELIVER_NOTIFICATION_WHATSAPP_JOB,
   createAiClassificationWorker,
+  createNotificationDeliveryWorker,
   getRedisUrl,
-  type AiClassificationJobPayload
+  type AiClassificationJobPayload,
+  type NotificationDeliveryJobPayload
 } from "@jahf-comm/shared";
 
 import { processAiClassificationJob } from "./ai-classification";
+import { processNotificationDeliveryJob } from "./notification-delivery";
 
 export type WorkerConfig = {
   redisUrl: string;
@@ -29,38 +33,72 @@ async function processJob(job: Job<AiClassificationJobPayload>) {
   return processAiClassificationJob(job.data);
 }
 
+async function processDeliveryJob(job: Job<NotificationDeliveryJobPayload>) {
+  if (job.name !== DELIVER_NOTIFICATION_WHATSAPP_JOB) {
+    throw new Error(`Unknown notification delivery job: ${job.name}`);
+  }
+
+  return processNotificationDeliveryJob(job.data);
+}
+
 export async function main(): Promise<void> {
   createWorkerConfig();
 
-  const worker = createAiClassificationWorker(processJob);
+  const aiWorker = createAiClassificationWorker(processJob);
+  const notificationDeliveryWorker =
+    createNotificationDeliveryWorker(processDeliveryJob);
 
-  worker.on("ready", () => {
+  aiWorker.on("ready", () => {
     console.log("JAHF Comm worker ready: ai-classification queue.");
   });
 
-  worker.on("completed", (job, result) => {
+  aiWorker.on("completed", (job, result) => {
     console.log("AI classification job completed.", {
       jobId: job.id,
       result
     });
   });
 
-  worker.on("failed", (job, error) => {
+  aiWorker.on("failed", (job, error) => {
     console.error("AI classification job failed.", {
       jobId: job?.id,
       message: error.message
     });
   });
 
-  worker.on("error", (error) => {
+  aiWorker.on("error", (error) => {
     console.error("AI classification worker error.", {
+      message: error.message
+    });
+  });
+
+  notificationDeliveryWorker.on("ready", () => {
+    console.log("JAHF Comm worker ready: notification-delivery queue.");
+  });
+
+  notificationDeliveryWorker.on("completed", (job, result) => {
+    console.log("Notification delivery job completed.", {
+      jobId: job.id,
+      result
+    });
+  });
+
+  notificationDeliveryWorker.on("failed", (job, error) => {
+    console.error("Notification delivery job failed.", {
+      jobId: job?.id,
+      message: error.message
+    });
+  });
+
+  notificationDeliveryWorker.on("error", (error) => {
+    console.error("Notification delivery worker error.", {
       message: error.message
     });
   });
 
   const shutdown = async () => {
     console.log("Stopping JAHF Comm worker.");
-    await worker.close();
+    await Promise.all([aiWorker.close(), notificationDeliveryWorker.close()]);
     process.exit(0);
   };
 

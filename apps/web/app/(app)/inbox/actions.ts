@@ -6,6 +6,7 @@ import {
   ConversationStage,
   CustomerEventType,
   MembershipRole,
+  Prisma,
   prisma
 } from "@jahf-comm/db";
 import { revalidatePath } from "next/cache";
@@ -339,7 +340,7 @@ export async function createInternalNote(formData: FormData) {
     throw new Error("Conversacion no encontrada para este tenant.");
   }
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const event = await tx.customerEvent.create({
       data: {
         tenantId: tenant.id,

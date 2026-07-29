@@ -1,4 +1,4 @@
-import { prisma } from "@jahf-comm/db";
+import { SupportStatus, Urgency, prisma } from "@jahf-comm/db";
 
 import { DataUnavailable } from "@/components/app/data-unavailable";
 import { PageHeader } from "@/components/app/page-header";
@@ -8,11 +8,23 @@ import { formatDate, humanizeEnum } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
+type SupportTicketRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  status: SupportStatus;
+  priority: Urgency;
+  createdAt: Date;
+  contact: {
+    name: string;
+  };
+};
+
 export default async function SupportPage() {
   try {
     const { tenant } = await requireAuth();
 
-    const tickets = await prisma.supportTicket.findMany({
+    const tickets: SupportTicketRow[] = await prisma.supportTicket.findMany({
       where: { tenantId: tenant.id },
       orderBy: { createdAt: "desc" },
       select: {

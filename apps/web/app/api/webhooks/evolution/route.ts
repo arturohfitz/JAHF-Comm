@@ -385,7 +385,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(
+      async (tx: Prisma.TransactionClient) => {
       const contact = await tx.contact.upsert({
         where: {
           tenantId_normalizedPhoneNumber: {
@@ -528,7 +529,8 @@ export async function POST(request: Request) {
         conversationId: conversation.id,
         messageId: message.id
       };
-    });
+      }
+    );
 
     // La IA se procesa en background por apps/worker para que el webhook responda rapido.
     const aiQueue = await enqueueAiClassification({

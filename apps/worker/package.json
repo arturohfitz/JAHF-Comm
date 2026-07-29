@@ -8,6 +8,9 @@
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src scripts --max-warnings=0",
+    "test:controlled-whatsapp-alert": "tsx --test tests/controlled-whatsapp-alert-test.test.ts",
+    "test:notification-delivery": "tsx --test tests/notification-delivery.test.ts",
+    "whatsapp-alert:test": "tsx scripts/controlled-whatsapp-alert-test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js",
     "queue:test": "tsx scripts/queue-test.ts"
@@ -16,6 +19,7 @@
     "@jahf-comm/ai": "workspace:*",
     "@jahf-comm/db": "workspace:*",
     "@jahf-comm/shared": "workspace:*",
+    "@jahf-comm/whatsapp": "workspace:*",
     "bullmq": "latest",
     "ioredis": "latest",
     "tsx": "latest"

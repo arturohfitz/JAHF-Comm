@@ -1,4 +1,9 @@
-import { prisma } from "@jahf-comm/db";
+import {
+  Prisma,
+  WebhookLogStatus,
+  WhatsAppProvider,
+  prisma
+} from "@jahf-comm/db";
 
 import { AccessDenied } from "@/components/app/access-denied";
 import { DataUnavailable } from "@/components/app/data-unavailable";
@@ -8,6 +13,23 @@ import { formatDate } from "@/lib/format";
 import { canManageSettings, requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
+
+type WebhookLogRow = {
+  id: string;
+  provider: WhatsAppProvider;
+  eventType: string | null;
+  providerInstanceId: string | null;
+  providerMessageId: string | null;
+  status: WebhookLogStatus;
+  httpStatus: number;
+  errorMessage: string | null;
+  rawPayload: Prisma.JsonValue | null;
+  createdAt: Date;
+  whatsappAccount: {
+    name: string;
+    displayName: string | null;
+  } | null;
+};
 
 function formatRawPayload(value: unknown) {
   if (!value) {
@@ -33,7 +55,7 @@ export default async function WebhookLogsPage() {
   }
 
   try {
-    const logs = await prisma.webhookLog.findMany({
+    const logs: WebhookLogRow[] = await prisma.webhookLog.findMany({
       where: {
         OR: [{ tenantId: tenant.id }, { tenantId: null }]
       },
