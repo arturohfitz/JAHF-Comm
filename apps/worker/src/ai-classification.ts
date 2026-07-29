@@ -25,6 +25,32 @@ type ClassificationOutcome =
       mode: string;
     };
 
+const DEFAULT_AI_CLASSIFICATION_TIMEOUT_MS = 20000;
+const MIN_AI_CLASSIFICATION_TIMEOUT_MS = 5000;
+const MAX_AI_CLASSIFICATION_TIMEOUT_MS = 120000;
+
+export function readAiClassificationTimeoutMs(
+  env: NodeJS.ProcessEnv = process.env
+) {
+  const rawValue = env.AI_CLASSIFICATION_TIMEOUT_MS?.trim();
+
+  if (!rawValue || !/^[1-9]\d*$/.test(rawValue)) {
+    return DEFAULT_AI_CLASSIFICATION_TIMEOUT_MS;
+  }
+
+  const timeoutMs = Number(rawValue);
+
+  if (
+    !Number.isSafeInteger(timeoutMs) ||
+    timeoutMs < MIN_AI_CLASSIFICATION_TIMEOUT_MS ||
+    timeoutMs > MAX_AI_CLASSIFICATION_TIMEOUT_MS
+  ) {
+    return DEFAULT_AI_CLASSIFICATION_TIMEOUT_MS;
+  }
+
+  return timeoutMs;
+}
+
 function evaluateAlertsForPayload(payload: AiClassificationJobPayload) {
   return evaluateAndCreateCustomerAlerts({
     tenantId: payload.tenantId,
@@ -205,7 +231,7 @@ export async function processAiClassificationJob(
       apiKey: process.env.OPENAI_API_KEY,
       model: process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL,
       forceMock: !process.env.OPENAI_API_KEY,
-      timeoutMs: 8000
+      timeoutMs: readAiClassificationTimeoutMs()
     }
   ).catch(async (error) => {
     await evaluateAlertsForPayload(payload);
