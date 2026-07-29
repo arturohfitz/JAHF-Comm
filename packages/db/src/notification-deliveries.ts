@@ -94,6 +94,12 @@ export function getWhatsappAlertRuntimeState(
   };
 }
 
+export function areSharedWhatsappAlertAccountsAllowed(
+  env: NodeJS.ProcessEnv = process.env
+) {
+  return readBooleanEnv(env.WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT, false);
+}
+
 export function getWhatsappAlertRuntimeConfig(
   env: NodeJS.ProcessEnv = process.env
 ): WhatsappAlertRuntimeConfig {
@@ -950,8 +956,10 @@ export async function buildClaimedWhatsappDeliveryContext(input: {
   deliveryId: string;
   now?: Date;
   publicUrl?: string;
+  env?: NodeJS.ProcessEnv;
 }) {
   const now = input.now ?? new Date();
+  const allowSharedAccount = areSharedWhatsappAlertAccountsAllowed(input.env);
   const delivery = await prisma.notificationDelivery.findFirst({
     where: {
       id: input.deliveryId,
@@ -1109,7 +1117,8 @@ export async function buildClaimedWhatsappDeliveryContext(input: {
 
   if (
     conversation?.whatsappAccountId &&
-    conversation.whatsappAccountId === settings.whatsappAlertsAccountId
+    conversation.whatsappAccountId === settings.whatsappAlertsAccountId &&
+    !allowSharedAccount
   ) {
     await updateDeliveryAfterValidation({
       tenantId: input.tenantId,
@@ -1161,7 +1170,8 @@ export async function buildClaimedWhatsappDeliveryContext(input: {
     triggerMessageId: readString(metadata.triggerMessageId),
     destinationMasked: destination ? maskDestination(destination) : null,
     messageHash: hashValue(text),
-    messageLength: text.length
+    messageLength: text.length,
+    allowSharedAccount
   } satisfies Prisma.InputJsonObject;
 
   return {

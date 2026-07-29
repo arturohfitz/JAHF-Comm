@@ -56,7 +56,8 @@ export function readControlledWhatsappCliInput(
     targetUserId,
     testRunId: readArg(argv, "testRunId"),
     confirm: readArg(argv, "confirm"),
-    confirmDedicatedNoWebhook: hasFlag(argv, "confirmDedicatedNoWebhook")
+    confirmDedicatedNoWebhook: hasFlag(argv, "confirmDedicatedNoWebhook"),
+    confirmSharedCommercialAccount: hasFlag(argv, "confirmSharedCommercialAccount")
   };
 }
 

@@ -16,7 +16,10 @@ import {
   createAiClassificationJobId,
   createAiClassificationQueue
 } from "@jahf-comm/shared";
-import { normalizeEvolutionInboundMessage } from "@jahf-comm/whatsapp";
+import {
+  normalizeEvolutionInboundMessage,
+  type NormalizedInboundMessage
+} from "@jahf-comm/whatsapp";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -76,6 +79,14 @@ function isDemoFallbackAllowed() {
     process.env.NODE_ENV !== "production" &&
     process.env.EVOLUTION_ALLOW_DEMO_FALLBACK === "true"
   );
+}
+
+function areSharedWhatsappAlertsAllowed(env: NodeJS.ProcessEnv = process.env) {
+  return env.WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT === "true";
+}
+
+function normalizePhoneDigits(value: string | null | undefined) {
+  return value?.replace(/\D/g, "") ?? "";
 }
 
 function getEventType(payload: unknown) {
@@ -248,6 +259,50 @@ async function enqueueAiClassification(input: {
   }
 }
 
+async function getResolvedEvolutionWebhookIgnoreReason(input: {
+  tenantId: string;
+  whatsappAccountId: string;
+  normalized: NormalizedInboundMessage;
+  env?: NodeJS.ProcessEnv;
+}) {
+  if (input.normalized.fromMe) {
+    return "OUTBOUND_FROM_ME" as const;
+  }
+
+  if (!areSharedWhatsappAlertsAllowed(input.env)) {
+    return null;
+  }
+
+  const settings = await prisma.tenantNotificationSettings.findUnique({
+    where: { tenantId: input.tenantId },
+    select: { whatsappAlertsAccountId: true }
+  });
+
+  if (settings?.whatsappAlertsAccountId !== input.whatsappAccountId) {
+    return null;
+  }
+
+  const fromDigits = normalizePhoneDigits(input.normalized.fromPhone);
+
+  if (!fromDigits) {
+    return null;
+  }
+
+  const internalPreferences = await prisma.notificationPreference.findMany({
+    where: {
+      tenantId: input.tenantId,
+      whatsappEnabled: true,
+      whatsappPhone: { not: null }
+    },
+    select: { whatsappPhone: true }
+  });
+  const matchesInternalDestination = internalPreferences.some((preference) => {
+    return normalizePhoneDigits(preference.whatsappPhone) === fromDigits;
+  });
+
+  return matchesInternalDestination ? ("INTERNAL_ALERT_REPLY" as const) : null;
+}
+
 export async function POST(request: Request) {
   const webhookSecret = getWebhookSecret();
   const providedSecret = request.headers.get("x-webhook-secret");
@@ -350,6 +405,28 @@ export async function POST(request: Request) {
       providerMessageId: normalized.providerMessageId
     }
   });
+
+  const ignoreReason = await getResolvedEvolutionWebhookIgnoreReason({
+    tenantId: resolvedWhatsAppAccount.tenantId,
+    whatsappAccountId: resolvedWhatsAppAccount.id,
+    normalized
+  });
+
+  if (ignoreReason) {
+    await prisma.webhookLog.update({
+      where: { id: webhookLog.id },
+      data: {
+        status: WebhookLogStatus.PROCESSED,
+        httpStatus: 200
+      }
+    });
+
+    return NextResponse.json({
+      ok: true,
+      ignored: true,
+      reason: ignoreReason
+    });
+  }
 
   if (normalized.providerMessageId) {
     const existingMessage = await prisma.message.findUnique({

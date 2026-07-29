@@ -28,6 +28,7 @@ export type ControlledWhatsappAlertTestInput = {
   testRunId?: string;
   confirm?: string;
   confirmDedicatedNoWebhook?: boolean;
+  confirmSharedCommercialAccount?: boolean;
 };
 export type ControlledWhatsappAlertTestOptions = {
   env?: NodeJS.ProcessEnv;
@@ -66,6 +67,7 @@ type ValidationContext = {
     dryRun: boolean;
     hasEvolutionUrl: boolean;
     hasEvolutionApiKey: boolean;
+    allowSharedAccount: boolean;
   };
 };
 
@@ -126,6 +128,10 @@ function readEnvState(env: NodeJS.ProcessEnv) {
     testEnabled: readBooleanEnv(env.WHATSAPP_ALERT_TEST_ENABLED, false),
     alertsEnabled: readBooleanEnv(env.WHATSAPP_ALERTS_ENABLED, false),
     dryRun: readBooleanEnv(env.WHATSAPP_ALERTS_DRY_RUN, true),
+    allowSharedAccount: readBooleanEnv(
+      env.WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT,
+      false
+    ),
     hasEvolutionUrl: Boolean(env.EVOLUTION_API_URL),
     hasEvolutionApiKey: Boolean(env.EVOLUTION_API_KEY)
   };
@@ -232,7 +238,7 @@ async function validateControlledTestContext(input: {
   }
 
   if (!settings.whatsappAlertsAccountId || !settings.whatsappAlertsAccount) {
-    throw new Error("Tenant does not have a dedicated WhatsApp alert account.");
+    throw new Error("Tenant does not have a WhatsApp alert account.");
   }
 
   const validAccountStatuses: WhatsAppAccountStatus[] = [
@@ -241,26 +247,28 @@ async function validateControlledTestContext(input: {
   ];
 
   if (!validAccountStatuses.includes(settings.whatsappAlertsAccount.status)) {
-    throw new Error("Dedicated WhatsApp alert account is not in a valid status.");
+    throw new Error("WhatsApp alert account is not in a valid status.");
   }
 
   if (!settings.whatsappAlertsAccount.instanceName) {
-    throw new Error("Dedicated WhatsApp alert account is missing instanceName.");
+    throw new Error("WhatsApp alert account is missing instanceName.");
   }
 
-  const targetConversationUsingAccount = await prisma.conversation.findFirst({
-    where: {
-      tenantId: input.tenantId,
-      assignedUserId: input.targetUserId,
-      whatsappAccountId: settings.whatsappAlertsAccountId
-    },
-    select: { id: true }
-  });
+  if (!envState.allowSharedAccount) {
+    const targetConversationUsingAccount = await prisma.conversation.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        assignedUserId: input.targetUserId,
+        whatsappAccountId: settings.whatsappAlertsAccountId
+      },
+      select: { id: true }
+    });
 
-  if (targetConversationUsingAccount) {
-    throw new Error(
-      "Dedicated WhatsApp alert account is used by a conversation assigned to the target user."
-    );
+    if (targetConversationUsingAccount) {
+      throw new Error(
+        "Dedicated WhatsApp alert account is used by a conversation assigned to the target user."
+      );
+    }
   }
 
   return {
@@ -291,8 +299,18 @@ function buildPreflightResult(input: {
   context: ValidationContext;
   testRunId: string;
 }) {
+  const confirmationFlag = input.context.envState.allowSharedAccount
+    ? "--confirmSharedCommercialAccount"
+    : "--confirmDedicatedNoWebhook";
+  const confirmationMessage = input.context.envState.allowSharedAccount
+    ? "Confirmacion manual requerida: la cuenta comercial compartida puede recibir clientes y enviar alertas internas; el webhook debe ignorar fromMe."
+    : "Confirmacion manual requerida: la instancia dedicada no debe enviar sus eventos al webhook de JAHF Comm.";
+
   return {
     mode: "preflight" as const,
+    accountMode: input.context.envState.allowSharedAccount
+      ? ("shared" as const)
+      : ("dedicated" as const),
     testRunId: input.testRunId,
     tenant: input.context.tenant,
     actor: input.context.actor,
@@ -309,13 +327,14 @@ function buildPreflightResult(input: {
       hasEvolutionApiKey: input.context.envState.hasEvolutionApiKey,
       whatsappAlertsEnabled: input.context.envState.alertsEnabled,
       whatsappAlertsDryRun: input.context.envState.dryRun,
-      whatsappAlertTestEnabled: input.context.envState.testEnabled
+      whatsappAlertTestEnabled: input.context.envState.testEnabled,
+      whatsappAlertsAllowSharedAccount: input.context.envState.allowSharedAccount
     },
     pendingConfirmations: [
-      "Confirmacion manual requerida: la instancia dedicada no debe enviar sus eventos al webhook de JAHF Comm.",
+      confirmationMessage,
       `Para live: --testRunId ${input.testRunId}`,
       `Para live: --confirm ${controlledWhatsappTestConfirmation}`,
-      "Para live: --confirmDedicatedNoWebhook"
+      `Para live: ${confirmationFlag}`
     ],
     liveCommand: [
       "pnpm --filter @jahf-comm/worker whatsapp-alert:test --",
@@ -325,7 +344,7 @@ function buildPreflightResult(input: {
       `--targetUserId ${input.context.target.id}`,
       `--testRunId ${input.testRunId}`,
       `--confirm ${controlledWhatsappTestConfirmation}`,
-      "--confirmDedicatedNoWebhook"
+      confirmationFlag
     ].join(" ")
   };
 }
@@ -367,8 +386,26 @@ export async function runControlledWhatsappAlertTest(
     throw new Error("Live mode confirmation phrase is invalid.");
   }
 
-  if (input.confirmDedicatedNoWebhook !== true) {
-    throw new Error("Dedicated no-webhook manual confirmation is required.");
+  if (context.envState.allowSharedAccount) {
+    if (input.confirmDedicatedNoWebhook) {
+      throw new Error(
+        "Dedicated no-webhook confirmation is invalid in shared account mode."
+      );
+    }
+
+    if (input.confirmSharedCommercialAccount !== true) {
+      throw new Error("Shared commercial account manual confirmation is required.");
+    }
+  } else {
+    if (input.confirmSharedCommercialAccount) {
+      throw new Error(
+        "Shared commercial account confirmation is invalid in dedicated account mode."
+      );
+    }
+
+    if (input.confirmDedicatedNoWebhook !== true) {
+      throw new Error("Dedicated no-webhook manual confirmation is required.");
+    }
   }
 
   const deduplicationKey = createDeduplicationKey({

@@ -47,6 +47,7 @@ const {
 const {
   buildWhatsAppNotificationText,
   calculateQuietHoursEnd,
+  buildClaimedWhatsappDeliveryContext,
   claimWhatsappNotificationDelivery,
   getWhatsappAlertRuntimeState,
   isWithinQuietHours,
@@ -661,6 +662,105 @@ test("LIVE crea PENDING y dos reclamos atomicos solo permiten un PROCESSING", as
   const claimedCount = [first, second].filter(Boolean).length;
 
   assert.equal(claimedCount, 1);
+});
+
+test("cuenta compartida queda bloqueada cuando WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT=false", async () => {
+  const base = await createBase("shared-blocked");
+  const notification = await configureReadyDelivery(base);
+  await prepareWhatsappNotificationDelivery({
+    tenantId: base.tenant.id,
+    notificationId: notification.id,
+    env: {
+      WHATSAPP_ALERTS_ENABLED: "true",
+      WHATSAPP_ALERTS_DRY_RUN: "false"
+    } as NodeJS.ProcessEnv
+  });
+  const claimed = await claimWhatsappNotificationDelivery({
+    tenantId: base.tenant.id,
+    notificationId: notification.id
+  });
+  const context = await buildClaimedWhatsappDeliveryContext({
+    tenantId: base.tenant.id,
+    deliveryId: claimed!.id,
+    env: {
+      WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT: "false"
+    } as NodeJS.ProcessEnv
+  });
+  const delivery = await prisma.notificationDelivery.findUniqueOrThrow({
+    where: {
+      tenantId_id: {
+        tenantId: base.tenant.id,
+        id: claimed!.id
+      }
+    }
+  });
+
+  assert.equal(context.status, "skipped");
+  assert.equal(delivery.errorCode, "ALERT_ACCOUNT_MATCHES_CONVERSATION_ACCOUNT");
+});
+
+test("cuenta compartida queda permitida cuando WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT=true", async () => {
+  const base = await createBase("shared-allowed");
+  const notification = await configureReadyDelivery(base);
+  await prepareWhatsappNotificationDelivery({
+    tenantId: base.tenant.id,
+    notificationId: notification.id,
+    env: {
+      WHATSAPP_ALERTS_ENABLED: "true",
+      WHATSAPP_ALERTS_DRY_RUN: "false"
+    } as NodeJS.ProcessEnv
+  });
+  const claimed = await claimWhatsappNotificationDelivery({
+    tenantId: base.tenant.id,
+    notificationId: notification.id
+  });
+  const context = await buildClaimedWhatsappDeliveryContext({
+    tenantId: base.tenant.id,
+    deliveryId: claimed!.id,
+    env: {
+      WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT: "true"
+    } as NodeJS.ProcessEnv
+  });
+
+  assert.equal(context.status, "ready");
+  assert.equal(context.context?.instanceName, base.account.instanceName);
+});
+
+test("proteccion DESTINATION_IS_CUSTOMER_PHONE permanece activa con cuenta compartida", async () => {
+  const base = await createBase("shared-destination-customer");
+  const notification = await configureReadyDelivery(base, {
+    whatsappPhone: base.contact.normalizedPhoneNumber
+  });
+  await prepareWhatsappNotificationDelivery({
+    tenantId: base.tenant.id,
+    notificationId: notification.id,
+    env: {
+      WHATSAPP_ALERTS_ENABLED: "true",
+      WHATSAPP_ALERTS_DRY_RUN: "false"
+    } as NodeJS.ProcessEnv
+  });
+  const claimed = await claimWhatsappNotificationDelivery({
+    tenantId: base.tenant.id,
+    notificationId: notification.id
+  });
+  const context = await buildClaimedWhatsappDeliveryContext({
+    tenantId: base.tenant.id,
+    deliveryId: claimed!.id,
+    env: {
+      WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT: "true"
+    } as NodeJS.ProcessEnv
+  });
+  const delivery = await prisma.notificationDelivery.findUniqueOrThrow({
+    where: {
+      tenantId_id: {
+        tenantId: base.tenant.id,
+        id: claimed!.id
+      }
+    }
+  });
+
+  assert.equal(context.status, "skipped");
+  assert.equal(delivery.errorCode, "DESTINATION_IS_CUSTOMER_PHONE");
 });
 
 test("DRY_RUN terminal no cambia a PENDING al pasar a LIVE", async () => {

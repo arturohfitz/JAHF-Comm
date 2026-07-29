@@ -14,6 +14,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src --max-warnings=0",
+    "test:inbound": "tsx --test tests/evolution-inbound.test.ts",
     "test:outbound": "tsx --test tests/evolution-outbound.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

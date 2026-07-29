@@ -8,7 +8,9 @@
     "build": "next build",
     "lint": "eslint . --max-warnings=0",
     "start": "next start -p 3000",
+    "test:evolution-webhook": "tsx --test tests/evolution-webhook.test.ts",
     "test:notifications": "tsx --test tests/notification-polling.test.ts",
+    "test:whatsapp-settings": "tsx --test tests/whatsapp-settings-feedback.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
