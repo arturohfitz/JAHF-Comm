@@ -11,6 +11,7 @@ import {
 } from "@jahf-comm/db";
 import { normalizePhoneNumber } from "@jahf-comm/whatsapp";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { requireRole } from "@/lib/auth";
 
@@ -36,6 +37,10 @@ function parseNotificationSeverity(value: string) {
   }
 
   throw new Error("Severidad minima no valida.");
+}
+
+function redirectToWhatsappSettings(param: string): never {
+  redirect(`/settings/whatsapp?${param}`);
 }
 
 function isValidTimezone(timezone: string) {
@@ -426,7 +431,7 @@ export async function updateTenantWhatsappAlertSettingsAction(
     });
 
     if (!account) {
-      throw new Error("La cuenta WhatsApp no pertenece a este tenant.");
+      redirectToWhatsappSettings("error=invalid-alert-account");
     }
   }
 
@@ -462,6 +467,7 @@ export async function updateTenantWhatsappAlertSettingsAction(
 
   revalidatePath("/settings");
   revalidatePath("/settings/whatsapp");
+  redirectToWhatsappSettings("saved=tenant-alerts");
 }
 
 export async function updateMyWhatsappNotificationPreferenceAction(
@@ -483,23 +489,32 @@ export async function updateMyWhatsappNotificationPreferenceAction(
   const quietHoursEnd = quietHoursEnabled
     ? nullableString(readFormString(formData, "quietHoursEnd"))
     : null;
+  let minimumSeverity: NotificationSeverity;
 
   if (whatsappEnabled && membership.role === MembershipRole.VIEWER) {
-    throw new Error("VIEWER no puede activar alertas por WhatsApp.");
+    redirectToWhatsappSettings("error=viewer-whatsapp-alerts");
   }
 
   if (!isValidTimezone(timezone)) {
-    throw new Error("Zona horaria no valida.");
+    redirectToWhatsappSettings("error=invalid-timezone");
   }
 
   if (quietHoursEnabled) {
     if (!quietHoursStart || !quietHoursEnd) {
-      throw new Error("El horario silencioso requiere inicio y fin.");
+      redirectToWhatsappSettings("error=quiet-hours-required");
     }
 
     if (!isValidHHmm(quietHoursStart) || !isValidHHmm(quietHoursEnd)) {
-      throw new Error("El horario silencioso debe usar formato HH:mm.");
+      redirectToWhatsappSettings("error=invalid-quiet-hours");
     }
+  }
+
+  try {
+    minimumSeverity = parseNotificationSeverity(
+      readFormString(formData, "minimumSeverity") || NotificationSeverity.HIGH
+    );
+  } catch {
+    redirectToWhatsappSettings("error=invalid-severity");
   }
 
   await prisma.notificationPreference.upsert({
@@ -514,9 +529,7 @@ export async function updateMyWhatsappNotificationPreferenceAction(
       userId: user.id,
       whatsappPhone: whatsappPhone ? normalizePhoneNumber(whatsappPhone) : null,
       whatsappEnabled,
-      minimumSeverity: parseNotificationSeverity(
-        readFormString(formData, "minimumSeverity") || NotificationSeverity.HIGH
-      ),
+      minimumSeverity,
       returningCustomerEnabled: readFormBoolean(
         formData,
         "returningCustomerEnabled"
@@ -539,9 +552,7 @@ export async function updateMyWhatsappNotificationPreferenceAction(
     update: {
       whatsappPhone: whatsappPhone ? normalizePhoneNumber(whatsappPhone) : null,
       whatsappEnabled,
-      minimumSeverity: parseNotificationSeverity(
-        readFormString(formData, "minimumSeverity") || NotificationSeverity.HIGH
-      ),
+      minimumSeverity,
       returningCustomerEnabled: readFormBoolean(
         formData,
         "returningCustomerEnabled"
@@ -565,4 +576,5 @@ export async function updateMyWhatsappNotificationPreferenceAction(
 
   revalidatePath("/settings");
   revalidatePath("/settings/whatsapp");
+  redirectToWhatsappSettings("saved=my-whatsapp-preferences");
 }

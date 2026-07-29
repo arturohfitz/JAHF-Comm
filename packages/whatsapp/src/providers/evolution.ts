@@ -58,11 +58,53 @@ function readNumber(value: unknown, path: string[]): number | null {
   return typeof current === "number" && Number.isFinite(current) ? current : null;
 }
 
+function readBoolean(value: unknown, path: string[]): boolean | null {
+  let current: unknown = value;
+
+  for (const key of path) {
+    if (!isRecord(current)) {
+      return null;
+    }
+
+    current = current[key];
+  }
+
+  if (typeof current === "boolean") {
+    return current;
+  }
+
+  if (typeof current === "string") {
+    const normalized = current.trim().toLowerCase();
+
+    if (normalized === "true") {
+      return true;
+    }
+
+    if (normalized === "false") {
+      return false;
+    }
+  }
+
+  return null;
+}
+
 function firstString(value: unknown, paths: string[][]): string | null {
   for (const path of paths) {
     const found = readString(value, path);
 
     if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+function firstBoolean(value: unknown, paths: string[][]): boolean | null {
+  for (const path of paths) {
+    const found = readBoolean(value, path);
+
+    if (found !== null) {
       return found;
     }
   }
@@ -229,6 +271,13 @@ export function normalizeEvolutionInboundMessage(
 
   return {
     providerMessageId,
+    fromMe:
+      firstBoolean(payload, [
+        ["data", "key", "fromMe"],
+        ["key", "fromMe"],
+        ["data", "fromMe"],
+        ["fromMe"]
+      ]) ?? false,
     fromPhone,
     toPhone: toPhone ? normalizePhoneNumber(toPhone) : null,
     instanceName,

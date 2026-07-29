@@ -93,6 +93,7 @@ function env(overrides: Record<string, string | undefined> = {}) {
     WEBHOOK_SECRET: "WEBHOOK_SECRET_SENTINEL",
     WHATSAPP_ALERTS_ENABLED: "false",
     WHATSAPP_ALERTS_DRY_RUN: "true",
+    WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT: "false",
     WHATSAPP_ALERT_TEST_ENABLED: "false",
     EVOLUTION_API_URL: sentinelUrl,
     EVOLUTION_API_KEY: sentinelApiKey,
@@ -315,6 +316,7 @@ async function live(
     testRunId?: string;
     confirm?: string;
     confirmDedicatedNoWebhook?: boolean;
+    confirmSharedCommercialAccount?: boolean;
     sendText?: Parameters<typeof runControlledWhatsappAlertTest>[1]["sendText"];
     envOverrides?: Record<string, string | undefined>;
     logs?: unknown[];
@@ -328,7 +330,8 @@ async function live(
       targetUserId: base.agent.id,
       testRunId: input.testRunId ?? uuid(),
       confirm: input.confirm ?? controlledWhatsappTestConfirmation,
-      confirmDedicatedNoWebhook: input.confirmDedicatedNoWebhook ?? true
+      confirmDedicatedNoWebhook: input.confirmDedicatedNoWebhook ?? true,
+      confirmSharedCommercialAccount: input.confirmSharedCommercialAccount
     },
     {
       env: env({
@@ -592,6 +595,22 @@ test("18 preflight advierte confirmación manual del webhook", async () => {
   );
 });
 
+test("18b preflight compartido genera confirmSharedCommercialAccount", async () => {
+  const base = await createBase("preflight-shared-confirm");
+  await prisma.tenantNotificationSettings.update({
+    where: { tenantId: base.tenant.id },
+    data: { whatsappAlertsAccountId: base.conversationAccount.id }
+  });
+  const result = await preflight(base, {
+    envOverrides: { WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT: "true" }
+  });
+
+  assert.equal(result.accountMode, "shared");
+  assert.equal(result.env.whatsappAlertsAllowSharedAccount, true);
+  assert.equal(result.liveCommand.includes("--confirmSharedCommercialAccount"), true);
+  assert.equal(result.liveCommand.includes("--confirmDedicatedNoWebhook"), false);
+});
+
 test("19 live rechaza WHATSAPP_ALERT_TEST_ENABLED=false", async () => {
   const base = await createBase("live-test-disabled");
 
@@ -647,6 +666,51 @@ test("23 live rechaza ausencia de confirmDedicatedNoWebhook", async () => {
       }),
     /no-webhook/
   );
+});
+
+test("23b live compartido rechaza confirmacion dedicada", async () => {
+  const base = await createBase("live-shared-reject-dedicated");
+  await prisma.tenantNotificationSettings.update({
+    where: { tenantId: base.tenant.id },
+    data: { whatsappAlertsAccountId: base.conversationAccount.id }
+  });
+
+  await assert.rejects(
+    () =>
+      live(base, {
+        confirmDedicatedNoWebhook: true,
+        confirmSharedCommercialAccount: true,
+        envOverrides: { WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT: "true" }
+      }),
+    /Dedicated no-webhook confirmation is invalid/
+  );
+});
+
+test("23c live compartido acepta confirmacion compartida correcta", async () => {
+  const base = await createBase("live-shared-accept");
+  await prisma.tenantNotificationSettings.update({
+    where: { tenantId: base.tenant.id },
+    data: { whatsappAlertsAccountId: base.conversationAccount.id }
+  });
+  let calls = 0;
+  const result = await live(base, {
+    confirmDedicatedNoWebhook: false,
+    confirmSharedCommercialAccount: true,
+    envOverrides: { WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT: "true" },
+    sendText: async () => {
+      calls += 1;
+
+      return {
+        providerMessageId: "provider-shared-success",
+        providerStatus: "PENDING",
+        httpStatus: 201,
+        responseReceived: true
+      };
+    }
+  });
+
+  assert.equal(calls, 1);
+  assert.equal(result.status, "sent");
 });
 
 test("24 live rechaza testRunId inválido", async () => {
@@ -938,8 +1002,26 @@ test("48 comando CLI preflight parsea el contrato exacto", () => {
     targetUserId: "recipient-id",
     testRunId: undefined,
     confirm: undefined,
-    confirmDedicatedNoWebhook: false
+    confirmDedicatedNoWebhook: false,
+    confirmSharedCommercialAccount: false
   });
+});
+
+test("48b CLI parsea confirmSharedCommercialAccount", () => {
+  const input = readControlledWhatsappCliInput([
+    "--mode",
+    "live",
+    "--tenantId",
+    "tenant-id",
+    "--actorUserId",
+    "owner-or-admin-id",
+    "--targetUserId",
+    "recipient-id",
+    "--confirmSharedCommercialAccount"
+  ]);
+
+  assert.equal(input.confirmSharedCommercialAccount, true);
+  assert.equal(input.confirmDedicatedNoWebhook, false);
 });
 
 test("49 CLI falla si falta --mode", () => {

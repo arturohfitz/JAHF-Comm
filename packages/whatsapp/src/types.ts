@@ -9,6 +9,7 @@ export type NormalizedWhatsAppMessageType =
 
 export type NormalizedInboundMessage = {
   providerMessageId: string | null;
+  fromMe: boolean;
   fromPhone: string;
   toPhone: string | null;
   instanceName: string | null;

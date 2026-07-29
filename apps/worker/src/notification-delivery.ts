@@ -84,7 +84,8 @@ export async function processNotificationDeliveryJob(
   const contextResult = await buildClaimedWhatsappDeliveryContext({
     tenantId: payload.tenantId,
     deliveryId: claimed.id,
-    now: options.now
+    now: options.now,
+    env
   });
 
   if (!contextResult.context) {

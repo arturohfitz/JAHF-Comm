@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/app/status-badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/format";
 import { canManageSettings, requireAuth } from "@/lib/auth";
+import { getWhatsappSettingsFeedback } from "@/lib/whatsapp-settings-feedback";
 
 import {
   createWhatsAppAccount,
@@ -78,6 +79,35 @@ type NotificationPreferenceFlag =
 type ConversationAccountRow = {
   whatsappAccountId: string;
 };
+
+type WhatsAppSettingsPageProps = {
+  searchParams?: Promise<{
+    saved?: string;
+    error?: string;
+  }>;
+};
+
+function FeedbackBanner({
+  feedback
+}: {
+  feedback: ReturnType<typeof getWhatsappSettingsFeedback>;
+}) {
+  if (!feedback) {
+    return null;
+  }
+
+  return (
+    <div
+      className={
+        feedback.tone === "success"
+          ? "mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800"
+          : "mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800"
+      }
+    >
+      {feedback.text}
+    </div>
+  );
+}
 
 function CreateWhatsAppAccountForm() {
   return (
@@ -210,11 +240,13 @@ function getSafeWhatsappRuntimeState() {
 function TenantAlertSettingsForm({
   accounts,
   settings,
-  conversationAccountIds
+  conversationAccountIds,
+  allowSharedAccount
 }: {
   accounts: WhatsAppAccountRow[];
   settings: TenantAlertSettings | null;
   conversationAccountIds: Set<string>;
+  allowSharedAccount: boolean;
 }) {
   return (
     <article className="rounded-md border bg-card p-5">
@@ -224,8 +256,9 @@ function TenantAlertSettingsForm({
             Cuenta de WhatsApp para alertas internas
           </h3>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Usa una cuenta dedicada. No debe ser la misma cuenta que recibe las
-            conversaciones de clientes.
+            {allowSharedAccount
+              ? "Modo de cuenta compartida habilitado. La cuenta comercial puede recibir clientes y enviar alertas internas. Los eventos salientes fromMe seran ignorados por el webhook."
+              : "Usa una cuenta dedicada. No debe ser la misma cuenta que recibe las conversaciones de clientes."}
           </p>
         </div>
       </div>
@@ -235,7 +268,7 @@ function TenantAlertSettingsForm({
         className="mt-5 grid gap-4 border-t pt-5 md:grid-cols-2"
       >
         <label className="grid gap-2 text-sm font-medium">
-          Cuenta dedicada
+          {allowSharedAccount ? "Cuenta comercial compartida" : "Cuenta dedicada"}
           <select
             className="h-10 rounded-md border bg-background px-3 text-sm"
             defaultValue={settings?.whatsappAlertsAccountId ?? ""}
@@ -263,9 +296,16 @@ function TenantAlertSettingsForm({
         <div className="md:col-span-2">
           {settings?.whatsappAlertsAccountId &&
           conversationAccountIds.has(settings.whatsappAlertsAccountId) ? (
-            <p className="text-sm font-medium text-destructive">
-              La cuenta seleccionada aparece en conversaciones. Usa una cuenta
-              dedicada para alertas internas.
+            <p
+              className={
+                allowSharedAccount
+                  ? "text-sm font-medium text-amber-700"
+                  : "text-sm font-medium text-destructive"
+              }
+            >
+              {allowSharedAccount
+                ? "La cuenta seleccionada aparece en conversaciones. En modo compartido esto es esperado; el webhook ignorara eventos fromMe y respuestas internas conocidas."
+                : "La cuenta seleccionada aparece en conversaciones. Usa una cuenta dedicada para alertas internas."}
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -401,8 +441,12 @@ function MyNotificationPreferenceForm({
   );
 }
 
-export default async function WhatsAppSettingsPage() {
+export default async function WhatsAppSettingsPage({
+  searchParams
+}: WhatsAppSettingsPageProps) {
   const { tenant, membership, user } = await requireAuth();
+  const params = await searchParams;
+  const feedback = getWhatsappSettingsFeedback(params);
 
   try {
     const [accounts, settings, preference, conversationAccounts]: [
@@ -463,6 +507,8 @@ export default async function WhatsAppSettingsPage() {
         })
       ]);
     const runtime = getSafeWhatsappRuntimeState();
+    const allowSharedAccount =
+      process.env.WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT === "true";
     const canManageTenantSettings = canManageSettings(membership.role);
     const conversationAccountIds = new Set(
       conversationAccounts.map((account) => account.whatsappAccountId)
@@ -474,6 +520,7 @@ export default async function WhatsAppSettingsPage() {
           description="Cuentas WhatsApp del tenant actual preparadas para recibir webhooks de Evolution API."
           title="WhatsApp"
         />
+        <FeedbackBanner feedback={feedback} />
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
@@ -492,6 +539,7 @@ export default async function WhatsAppSettingsPage() {
           {canManageTenantSettings ? (
             <>
               <TenantAlertSettingsForm
+                allowSharedAccount={allowSharedAccount}
                 accounts={accounts}
                 conversationAccountIds={conversationAccountIds}
                 settings={settings}
