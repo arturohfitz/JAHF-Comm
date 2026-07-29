@@ -58,11 +58,11 @@
     "@prisma/client": "latest",
     "dotenv": "latest",
     "pg": "latest",
+    "prisma": "7.8.0",
     "tsx": "latest"
   },
   "devDependencies": {
     "@types/pg": "latest",
-    "prisma": "latest",
     "typescript": "latest"
   },
   "prisma": {
