@@ -30,6 +30,8 @@ RUN DATABASE_URL="postgresql://build:build@localhost:5432/build?schema=public" \
   WEBHOOK_SECRET="build-webhook-secret" \
   pnpm --filter @jahf-comm/worker... build
 RUN CI=true pnpm prune --prod
+RUN pnpm --filter @jahf-comm/db exec prisma --version
+RUN pnpm --filter @jahf-comm/db exec tsx --version
 
 FROM base AS runner
 
