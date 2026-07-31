@@ -3,6 +3,7 @@ import {
   ContactStage,
   ConversationStage,
   PaymentStatus,
+  SaleStatus,
   Urgency
 } from "@jahf-comm/db";
 import OpenAI from "openai";
@@ -34,6 +35,42 @@ const pendingPaymentStatuses: PaymentStatus[] = [
   PaymentStatus.PARTIAL,
   PaymentStatus.OVERDUE
 ];
+const validPurchasedSaleStatuses: SaleStatus[] = [SaleStatus.PAID, SaleStatus.PENDING];
+
+function truncate(value: string, maxLength: number) {
+  return value.length <= maxLength ? value : value.slice(0, maxLength).trimEnd();
+}
+
+function compactMessageText(value: string | null | undefined, fallback: string) {
+  const compacted = value?.replace(/\s+/g, " ").trim();
+
+  return compacted ? truncate(compacted, 160) : fallback;
+}
+
+function hasValidSale(context: AiClassificationContext) {
+  return context.sales.some((sale) => validPurchasedSaleStatuses.includes(sale.status));
+}
+
+function latestMessage(context: AiClassificationContext, direction: "INBOUND" | "OUTBOUND") {
+  return [...context.messages]
+    .reverse()
+    .find((message) => message.direction === direction);
+}
+
+export function normalizeClassificationFacts(
+  context: AiClassificationContext,
+  classification: ConversationClassification
+): ConversationClassification {
+  if (classification.interestStatus === "PURCHASED" && !hasValidSale(context)) {
+    return {
+      ...classification,
+      interestStatus: "UNKNOWN",
+      interestSummary: null
+    };
+  }
+
+  return classification;
+}
 
 function mockClassification(
   context: AiClassificationContext
@@ -51,6 +88,14 @@ function mockClassification(
     text
   );
   const quote = /precio|costo|cotiz|cuanto|cuánto|plan/.test(text);
+  const latestInbound = latestMessage(context, "INBOUND");
+  const latestOutbound = latestMessage(context, "OUTBOUND");
+  const hasSale = hasValidSale(context);
+  const hasQuotedAsset = context.messages.some(
+    (message) =>
+      message.direction === "OUTBOUND" &&
+      /cotiz|presupuesto|propuesta/i.test(message.text ?? "")
+  );
   const intent = paymentConcern
     ? AIIntent.PAYMENT
     : supportConcern
@@ -96,6 +141,27 @@ function mockClassification(
     detectedSupportConcern: supportConcern,
     detectedConfigurationConcern: configurationConcern,
     sentiment: angry ? "ANGRY" : supportConcern ? "NEGATIVE" : "NEUTRAL",
+    previousTopic: latestOutbound
+      ? compactMessageText(latestOutbound.text, "Seguimiento previo del agente")
+      : null,
+    currentRequest: latestInbound
+      ? compactMessageText(latestInbound.text, "Solicita seguimiento")
+      : "Solicita seguimiento",
+    interestStatus: hasSale ? "PURCHASED" : hasQuotedAsset ? "QUOTED" : quote ? "INTERESTED" : "UNKNOWN",
+    interestSummary: hasSale
+      ? "Compra registrada en el CRM"
+      : hasQuotedAsset
+        ? "Cotizacion enviada en la conversacion"
+        : quote
+          ? "Muestra interes comercial"
+          : null,
+    shortRecommendedAction: paymentConcern
+      ? "Revisar saldo y responder opciones de pago."
+      : supportConcern
+        ? "Revisar el caso y pedir detalles clave."
+        : quote
+          ? "Confirmar modelo y preparar seguimiento comercial."
+          : "Revisar conversacion y responder manualmente.",
     shouldCreateNotification: urgency !== Urgency.LOW || paymentConcern,
     notificationTitle:
       urgency === Urgency.LOW ? null : `IA sugiere ${intent.toLowerCase()}`,
@@ -174,8 +240,9 @@ export async function classifyConversation(
   const useMock = options.forceMock || !options.apiKey;
 
   if (useMock) {
-    const classification = validateConversationClassification(
-      mockClassification(context)
+    const classification = normalizeClassificationFacts(
+      context,
+      validateConversationClassification(mockClassification(context))
     );
 
     return {
@@ -188,11 +255,9 @@ export async function classifyConversation(
     };
   }
 
-  const classification = await classifyWithOpenAI(
+  const classification = normalizeClassificationFacts(
     context,
-    options.apiKey as string,
-    model,
-    timeoutMs
+    await classifyWithOpenAI(context, options.apiKey as string, model, timeoutMs)
   );
 
   return {

@@ -460,6 +460,262 @@ test("message builder enmascara telefono, limita longitud y no expone texto raw"
   assert.equal(text.length <= 1800, true);
 });
 
+function compactSummary(input: Partial<{
+  previousInteractionAt: string | null;
+  inactivityMinutes: number | null;
+  previousTopic: string | null;
+  currentRequest: string | null;
+  interestStatus: string;
+  interestSummary: string | null;
+  shortRecommendedAction: string | null;
+  lastSharedAsset: { name: string; type: string; kind: string; sentAt: string } | null;
+  lastSale: { product: string; status: string; soldAt: string } | null;
+  attention: { urgent: boolean; negative: boolean };
+}> = {}) {
+  return {
+    previousInteractionAt: Object.hasOwn(input, "previousInteractionAt")
+      ? input.previousInteractionAt!
+      : "2026-07-22T16:30:00.000Z",
+    inactivityMinutes: Object.hasOwn(input, "inactivityMinutes")
+      ? input.inactivityMinutes!
+      : 8 * 24 * 60,
+    previousTopic: Object.hasOwn(input, "previousTopic")
+      ? input.previousTopic!
+      : "Pregunto por laptop con Nexiq y programas Cummins.",
+    currentRequest: Object.hasOwn(input, "currentRequest")
+      ? input.currentRequest!
+      : "Quiere continuar con la compra en linea.",
+    interestStatus: input.interestStatus ?? "QUOTED",
+    interestSummary: Object.hasOwn(input, "interestSummary")
+      ? input.interestSummary!
+      : "Cotizacion enviada; compra no registrada.",
+    shortRecommendedAction: Object.hasOwn(input, "shortRecommendedAction")
+      ? input.shortRecommendedAction!
+      : "Confirmar modelo y forma de pago.",
+    lastSharedAsset:
+      input.lastSharedAsset === undefined
+        ? {
+            name: "Cotizacion_Nexiq.pdf",
+            type: "DOCUMENT",
+            kind: "QUOTATION",
+            sentAt: "2026-07-22T17:00:00.000Z"
+          }
+        : input.lastSharedAsset,
+    lastSale: input.lastSale ?? null,
+    attention: input.attention ?? { urgent: false, negative: false }
+  };
+}
+
+function compactMessage(input: { compact?: unknown; url?: string | null } = {}) {
+  return buildWhatsAppNotificationText({
+    title: "Cliente reactivado: Pedro Ramirez",
+    description: "Resumen: texto largo que no debe mostrarse. Reglas: internas.",
+    contactName: "Pedro Ramirez",
+    contactPhone: "+5215512341838",
+    rules: ["CUSTOMER_COMMERCIAL_REACTIVATION"],
+    summary: "Memoria: no debe mostrarse",
+    recommendedAction: "Accion larga antigua",
+    url: input.url ?? "https://comms.jahfconnect.com/inbox?conversationId=abc",
+    compactSummary: input.compact ?? compactSummary(),
+    timezone: "America/Mexico_City"
+  });
+}
+
+test("formato compacto no contiene etiquetas largas ni sentimiento neutral", () => {
+  const text = compactMessage();
+
+  assert.equal(text.includes("Resumen:"), false);
+  assert.equal(text.includes("Memoria:"), false);
+  assert.equal(text.includes("Reglas:"), false);
+  assert.equal(text.includes("Neutral"), false);
+  assert.equal(text.includes("****1838"), true);
+});
+
+test("formato compacto muestra negativo solo cuando aplica", () => {
+  const neutral = compactMessage({
+    compact: compactSummary({ attention: { urgent: false, negative: false } })
+  });
+  const negative = compactMessage({
+    compact: compactSummary({ attention: { urgent: false, negative: true } })
+  });
+
+  assert.equal(neutral.includes("Cliente molesto"), false);
+  assert.match(negative.split("\n")[0] ?? "", /🔔⚠️/);
+  assert.match(negative, /cliente molesto/);
+});
+
+test("formato compacto muestra urgencia solo cuando aplica", () => {
+  const neutral = compactMessage({
+    compact: compactSummary({ attention: { urgent: false, negative: false } })
+  });
+  const urgent = compactMessage({
+    compact: compactSummary({ attention: { urgent: true, negative: false } })
+  });
+
+  assert.equal(neutral.includes("Solicitud urgente"), false);
+  assert.match(urgent.split("\n")[0] ?? "", /🔔⚠️/);
+  assert.match(urgent, /solicitud urgente/);
+});
+
+test("formato compacto omite lineas vacias e incluye enlace", () => {
+  const text = compactMessage({
+    compact: compactSummary({
+      previousTopic: null,
+      currentRequest: null,
+      lastSharedAsset: null,
+      interestSummary: null,
+      shortRecommendedAction: null
+    })
+  });
+
+  assert.equal(text.includes("Antes:"), false);
+  assert.equal(text.includes("📎"), false);
+  assert.match(text, /💬 Ahora:/);
+  assert.match(text, /🔗 https:\/\/comms\.jahfconnect\.com/);
+});
+
+test("formato compacto queda dentro del limite definido", () => {
+  const text = compactMessage({
+    compact: compactSummary({
+      previousTopic: "x".repeat(600),
+      currentRequest: "y".repeat(600),
+      shortRecommendedAction: "z".repeat(600)
+    })
+  });
+  const withoutUrl = text
+    .split("\n")
+    .filter((line) => !line.startsWith("🔗"))
+    .join("\n");
+
+  assert.equal(withoutUrl.length <= 650, true);
+});
+
+test("formato compacto siempre conserva accion con campos largos", () => {
+  const text = compactMessage({
+    compact: compactSummary({
+      previousTopic: "preguntó ".repeat(120),
+      currentRequest: "quiere continuar ".repeat(120),
+      interestSummary: "interesado ".repeat(80),
+      shortRecommendedAction: "Confirmar modelo y forma de pago antes de enviar liga."
+    })
+  });
+
+  assert.match(text, /➡️ Confirmar modelo y forma de pago/);
+});
+
+test("formato compacto limita lineas informativas mas enlace", () => {
+  const lines = compactMessage().split("\n");
+  const infoLines = lines.filter((line) => !line.startsWith("🔗"));
+
+  assert.equal(infoLines.length <= 7, true);
+  assert.equal(lines.at(-1)?.startsWith("🔗 "), true);
+});
+
+test("formato compacto no elimina tema anterior por urgencia", () => {
+  const text = compactMessage({
+    compact: compactSummary({ attention: { urgent: true, negative: false } })
+  });
+
+  assert.match(text, /🧩 Antes:/);
+  assert.match(text, /➡️ Confirmar modelo/);
+});
+
+test("formato compacto no repite cotizacion en estado y archivo", () => {
+  const text = compactMessage();
+
+  assert.match(text, /💼 Estado: interesado; compra no registrada/);
+  assert.match(text, /📎 Cotizacion_Nexiq\.pdf/);
+  assert.equal((text.match(/cotización enviada/gi) ?? []).length, 0);
+});
+
+test("formato compacto bloquea PURCHASED sin Sale", () => {
+  const text = compactMessage({
+    compact: compactSummary({
+      interestStatus: "PURCHASED",
+      interestSummary: "compró una laptop Nexiq",
+      lastSharedAsset: null,
+      lastSale: null
+    })
+  });
+
+  assert.doesNotMatch(text, /compr[oó]|adquiri[oó]|compra registrada/i);
+});
+
+test("formato compacto muestra compra solo con Sale PAID", () => {
+  const text = compactMessage({
+    compact: compactSummary({
+      lastSharedAsset: null,
+      lastSale: {
+        product: "Laptop Nexiq",
+        status: "PAID",
+        soldAt: "2026-07-10T16:00:00.000Z"
+      }
+    })
+  });
+
+  assert.match(text, /compró Laptop Nexiq/);
+});
+
+test("formato compacto muestra venta pendiente sin decir compro", () => {
+  const text = compactMessage({
+    compact: compactSummary({
+      lastSharedAsset: null,
+      lastSale: {
+        product: "Laptop Nexiq",
+        status: "PENDING",
+        soldAt: "2026-07-10T16:00:00.000Z"
+      }
+    })
+  });
+
+  assert.doesNotMatch(text, /compr[oó]/i);
+  assert.match(text, /venta registrada de Laptop Nexiq; pendiente/);
+});
+
+test("formato compacto no afirma compra con Sale CANCELLED o REFUNDED", () => {
+  const cancelled = compactMessage({
+    compact: compactSummary({
+      lastSharedAsset: null,
+      lastSale: {
+        product: "Laptop Nexiq",
+        status: "CANCELLED",
+        soldAt: "2026-07-10T16:00:00.000Z"
+      }
+    })
+  });
+  const refunded = compactMessage({
+    compact: compactSummary({
+      lastSharedAsset: null,
+      lastSale: {
+        product: "Laptop Nexiq",
+        status: "REFUNDED",
+        soldAt: "2026-07-10T16:00:00.000Z"
+      }
+    })
+  });
+
+  assert.doesNotMatch(cancelled, /compr[oó]|adquiri[oó]/i);
+  assert.doesNotMatch(refunded, /compr[oó]|adquiri[oó]/i);
+});
+
+test("formato compacto muestra archivo generico sin estado QUOTED", () => {
+  const text = compactMessage({
+    compact: compactSummary({
+      interestStatus: "INTERESTED",
+      interestSummary: "interesado en revisar informacion tecnica.",
+      lastSharedAsset: {
+        name: "Manual_Nexiq.pdf",
+        type: "DOCUMENT",
+        kind: "DOCUMENT",
+        sentAt: "2026-07-22T17:00:00.000Z"
+      }
+    })
+  });
+
+  assert.match(text, /📎 Manual_Nexiq\.pdf/);
+  assert.doesNotMatch(text, /cotización enviada/i);
+});
+
 test("delivery se marca SKIPPED cuando tenant, usuario o preferencia no permiten WhatsApp", async () => {
   const disabledTenant = await createBase("skip-tenant");
   await upsertNotificationPreference({

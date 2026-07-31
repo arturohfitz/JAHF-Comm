@@ -172,6 +172,7 @@ type DeliveryActionDecision =
 type NotificationMetadata = {
   source?: unknown;
   rules?: unknown;
+  compactSummary?: unknown;
   contactId?: unknown;
   conversationId?: unknown;
   triggerMessageId?: unknown;
@@ -190,6 +191,89 @@ function readMetadata(value: Prisma.JsonValue | null | undefined) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as NotificationMetadata)
     : {};
+}
+
+type CompactAlertSummary = {
+  previousInteractionAt: string | null;
+  inactivityMinutes: number | null;
+  previousTopic: string | null;
+  currentRequest: string | null;
+  interestStatus: string;
+  interestSummary: string | null;
+  shortRecommendedAction: string | null;
+  lastSharedAsset: {
+    name: string;
+    type: string;
+    kind: string;
+    sentAt: string;
+  } | null;
+  lastSale: {
+    product: string;
+    status: string;
+    soldAt: string;
+  } | null;
+  attention: {
+    urgent: boolean;
+    negative: boolean;
+  };
+};
+
+function readRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function readCompactSummary(value: unknown): CompactAlertSummary | null {
+  const record = readRecord(value);
+
+  if (!record) {
+    return null;
+  }
+
+  const lastSharedAsset = readRecord(record.lastSharedAsset);
+  const lastSale = readRecord(record.lastSale);
+  const attention = readRecord(record.attention);
+
+  return {
+    previousInteractionAt: readString(record.previousInteractionAt),
+    inactivityMinutes: readNumber(record.inactivityMinutes),
+    previousTopic: readString(record.previousTopic),
+    currentRequest: readString(record.currentRequest),
+    interestStatus: readString(record.interestStatus) ?? "UNKNOWN",
+    interestSummary: readString(record.interestSummary),
+    shortRecommendedAction: readString(record.shortRecommendedAction),
+    lastSharedAsset:
+      lastSharedAsset &&
+      readString(lastSharedAsset.name) &&
+      readString(lastSharedAsset.type) &&
+      readString(lastSharedAsset.sentAt)
+        ? {
+            name: readString(lastSharedAsset.name) as string,
+            type: readString(lastSharedAsset.type) as string,
+            kind:
+              readString(lastSharedAsset.kind) ??
+              readString(lastSharedAsset.type) ??
+              "DOCUMENT",
+            sentAt: readString(lastSharedAsset.sentAt) as string
+          }
+        : null,
+    lastSale:
+      lastSale &&
+      readString(lastSale.product) &&
+      readString(lastSale.status) &&
+      readString(lastSale.soldAt)
+        ? {
+            product: readString(lastSale.product) as string,
+            status: readString(lastSale.status) as string,
+            soldAt: readString(lastSale.soldAt) as string
+          }
+        : null,
+    attention: {
+      urgent: attention?.urgent === true,
+      negative: attention?.negative === true
+    }
+  };
 }
 
 function readString(value: unknown) {
@@ -212,6 +296,137 @@ function truncate(value: string | null | undefined, maxLength: number) {
   }
 
   return value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`;
+}
+
+function truncateLine(value: string | null | undefined, maxLength = 140) {
+  return truncate(value?.replace(/\s+/g, " ").trim(), maxLength);
+}
+
+function maskCompactPhone(value: string | null) {
+  const digits = value?.replace(/\D/g, "") ?? "";
+
+  return digits ? `****${digits.slice(-4)}` : null;
+}
+
+function formatDateEsMx(value: string | null, timezone: string) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("es-MX", {
+    timeZone: timezone,
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  })
+    .format(date)
+    .replace(".", "");
+}
+
+function formatCompactInactivity(minutes: number | null) {
+  if (minutes === null) {
+    return null;
+  }
+
+  if (minutes < 60) {
+    return `hace ${Math.max(minutes, 1)} min`;
+  }
+
+  const hours = Math.round(minutes / 60);
+
+  if (hours < 48) {
+    return `hace ${hours} h`;
+  }
+
+  const days = Math.round(hours / 24);
+
+  return `hace ${days} días`;
+}
+
+function compactInterestStatus(input: CompactAlertSummary, timezone: string) {
+  if (input.lastSale?.status === "PAID") {
+    const date = formatDateEsMx(input.lastSale.soldAt, timezone);
+
+    return `compró ${input.lastSale.product}${date ? ` el ${date}` : ""}.`;
+  }
+
+  if (input.lastSale?.status === "PENDING") {
+    return `venta registrada de ${input.lastSale.product}; pendiente de confirmación o pago.`;
+  }
+
+  if (input.lastSharedAsset?.kind === "QUOTATION") {
+    return "interesado; compra no registrada.";
+  }
+
+  if (input.interestStatus === "INTERESTED" && input.interestSummary) {
+    return input.interestSummary.toLowerCase().startsWith("interes")
+      ? input.interestSummary
+      : `interesado; ${input.interestSummary}`;
+  }
+
+  if (input.interestStatus === "NOT_INTERESTED") {
+    return "indicó que no está interesado por ahora.";
+  }
+
+  if (input.interestStatus === "FOLLOW_UP") {
+    return "seguimiento pendiente.";
+  }
+
+  if (input.interestStatus === "PURCHASED") {
+    return null;
+  }
+
+  if (
+    input.interestSummary &&
+    /(compr[oó]|adquiri[oó]|adquirió|compra registrada)/i.test(input.interestSummary)
+  ) {
+    return null;
+  }
+
+  return input.interestSummary;
+}
+
+function compactLinesLength(lines: string[]) {
+  return lines.join("\n").length;
+}
+
+function limitCompactLines(input: {
+  required: string[];
+  optional: string[];
+  maxLength: number;
+  maxLines: number;
+}) {
+  const currentIndex = input.required.findIndex((line) => line.startsWith("💬"));
+  const splitIndex = currentIndex >= 0 ? currentIndex : Math.max(input.required.length - 1, 0);
+  const prefix = input.required.slice(0, splitIndex);
+  const suffix = input.required.slice(splitIndex);
+  const selectedOptional: string[] = [];
+
+  if (input.required.length > input.maxLines) {
+    return input.required.slice(0, input.maxLines);
+  }
+
+  for (const line of input.optional) {
+    if (prefix.length + selectedOptional.length + suffix.length >= input.maxLines) {
+      break;
+    }
+
+    const candidate = [...prefix, ...selectedOptional, line, ...suffix];
+
+    if (compactLinesLength(candidate) > input.maxLength) {
+      continue;
+    }
+
+    selectedOptional.push(line);
+  }
+
+  return [...prefix, ...selectedOptional, ...suffix];
 }
 
 function maskDestination(value: string) {
@@ -389,23 +604,92 @@ export function buildWhatsAppNotificationText(input: {
   summary: string | null;
   recommendedAction: string | null;
   url: string | null;
+  compactSummary?: unknown;
+  timezone?: string | null;
 }) {
-  const lines = [
-    `Alerta JAHF Comm: ${truncate(input.title, 120)}`,
-    input.contactName ? `Cliente: ${truncate(input.contactName, 120)}` : null,
-    input.contactPhone ? `Telefono: ${maskDestination(input.contactPhone)}` : null,
-    input.description ? `Resumen: ${truncate(input.description, 500)}` : null,
-    input.summary ? `Memoria: ${truncate(input.summary, 360)}` : null,
+  const timezone = input.timezone || "America/Mexico_City";
+  const compactSummary = readCompactSummary(input.compactSummary);
+
+  if (compactSummary) {
+    const previousDate = formatDateEsMx(
+      compactSummary.previousInteractionAt,
+      timezone
+    );
+    const inactivity = formatCompactInactivity(compactSummary.inactivityMinutes);
+    const assetDate = formatDateEsMx(
+      compactSummary.lastSharedAsset?.sentAt ?? null,
+      timezone
+    );
+    const status = compactInterestStatus(compactSummary, timezone);
+    const attentionMarker =
+      compactSummary.attention.negative || compactSummary.attention.urgent
+        ? "⚠️"
+        : "";
+    const currentPrefix = compactSummary.attention.negative
+      ? "cliente molesto; "
+      : compactSummary.attention.urgent
+        ? "solicitud urgente; "
+        : "";
+    const header = `🔔${attentionMarker} ${truncateLine(input.contactName ?? input.title, 60)} volvió${
+        maskCompactPhone(input.contactPhone)
+          ? ` · ${maskCompactPhone(input.contactPhone)}`
+          : ""
+      }`;
+    const dateLine = previousDate
+      ? `📅 ${previousDate}${inactivity ? ` · ${inactivity}` : ""}`
+      : null;
+    const currentLine = compactSummary.currentRequest
+      ? `💬 Ahora: ${truncateLine(`${currentPrefix}${compactSummary.currentRequest}`, 110)}`
+      : "💬 Ahora: requiere seguimiento.";
+    const actionLine = `➡️ ${truncateLine(
+      compactSummary.shortRecommendedAction ?? input.recommendedAction ?? "Revisar conversación y responder.",
+      110
+    )}`;
+    const requiredLines = [header, dateLine, currentLine, actionLine].filter(
+      (line): line is string => Boolean(line)
+    );
+    const optionalLines = [
+      compactSummary.previousTopic
+        ? `🧩 Antes: ${truncateLine(compactSummary.previousTopic, 105)}`
+        : null,
+      status ? `💼 Estado: ${truncateLine(status, 105)}` : null,
+      compactSummary.lastSharedAsset
+        ? `📎 ${truncateLine(compactSummary.lastSharedAsset.name, 90)}${
+            assetDate ? ` · ${assetDate}` : ""
+          }`
+        : null
+    ].filter((line): line is string => Boolean(line));
+    const limitedLines = limitCompactLines({
+      required: requiredLines,
+      optional: optionalLines,
+      maxLength: 650,
+      maxLines: 7
+    });
+    const withUrl = input.url
+      ? [...limitedLines.slice(0, 7), `🔗 ${input.url}`]
+      : limitedLines.slice(0, 7);
+
+    return truncate(withUrl.join("\n"), maxMessageLength);
+  }
+
+  const fallbackLines = [
+    `Alerta JAHF Comm: ${truncateLine(input.title, 120)}`,
+    input.contactName
+      ? `Cliente: ${truncateLine(input.contactName, 90)}${
+          maskCompactPhone(input.contactPhone)
+            ? ` · ${maskCompactPhone(input.contactPhone)}`
+            : ""
+        }`
+      : null,
     input.recommendedAction
-      ? `Accion sugerida: ${truncate(input.recommendedAction, 240)}`
-      : null,
-    input.rules.length > 0
-      ? `Reglas: ${input.rules.map((rule) => rule.replaceAll("_", " ")).join(", ")}`
-      : null,
+      ? `Acción: ${truncateLine(input.recommendedAction, 180)}`
+      : input.description
+        ? truncateLine(input.description, 180)
+        : null,
     input.url ? `Abrir: ${input.url}` : null
   ].filter((line): line is string => Boolean(line));
 
-  return truncate(lines.join("\n"), maxMessageLength);
+  return truncate(fallbackLines.join("\n"), maxMessageLength);
 }
 
 export async function evaluateWhatsappDeliveryEligibility(input: {
@@ -675,7 +959,8 @@ export async function prepareWhatsappNotificationDelivery(input: {
         }
       },
       select: {
-        whatsappPhone: true
+        whatsappPhone: true,
+        timezone: true
       }
     }),
     contactId
@@ -731,7 +1016,9 @@ export async function prepareWhatsappNotificationDelivery(input: {
     rules: readStringArray(metadata.rules),
     summary: memory?.commercialSummary ?? null,
     recommendedAction: memory?.recommendedNextAction ?? null,
-    url: joinUrl(input.publicUrl ?? process.env.APP_PUBLIC_URL, href)
+    url: joinUrl(input.publicUrl ?? process.env.APP_PUBLIC_URL, href),
+    compactSummary: metadata.compactSummary,
+    timezone: preference?.timezone
   });
   const deliveryMetadata = {
     source: notificationDeliverySource,
@@ -1157,7 +1444,9 @@ export async function buildClaimedWhatsappDeliveryContext(input: {
     rules: readStringArray(metadata.rules),
     summary: memory?.commercialSummary ?? null,
     recommendedAction: memory?.recommendedNextAction ?? null,
-    url: joinUrl(input.publicUrl ?? process.env.APP_PUBLIC_URL, href)
+    url: joinUrl(input.publicUrl ?? process.env.APP_PUBLIC_URL, href),
+    compactSummary: metadata.compactSummary,
+    timezone: preference?.timezone
   });
   const safeMetadata = {
     ...metadataRecord(delivery.metadata),

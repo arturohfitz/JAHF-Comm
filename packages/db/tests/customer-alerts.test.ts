@@ -265,6 +265,38 @@ test("FIRST_CONTACT no crea alerta", async () => {
   assert.equal(evaluateCustomerAlertRules({ customerMemory: memory, triggerMessage: { id: base.trigger.id, direction: "INBOUND" } }), null);
 });
 
+test("FIRST_CONTACT no crea alerta aunque requiresHuman=true", async () => {
+  const base = await createReturnMemory({ label: "first-human", minutes: 1 });
+  await prisma.customerMemory.update({
+    where: { tenantId_contactId: { tenantId: base.tenant.id, contactId: base.contact.id } },
+    data: { lastReturnType: CustomerReturnType.FIRST_CONTACT, isReturningCustomer: false }
+  });
+  const memory = await getCustomerMemoryView({ tenantId: base.tenant.id, contactId: base.contact.id });
+  const result = evaluateCustomerAlertRules({
+    customerMemory: memory,
+    latestClassification: classification({ rawResult: { requiresHuman: true } }),
+    triggerMessage: { id: base.trigger.id, direction: "INBOUND" }
+  });
+
+  assert.equal(result, null);
+});
+
+test("FIRST_CONTACT no crea alerta aunque urgency=URGENT", async () => {
+  const base = await createReturnMemory({ label: "first-urgent", minutes: 1 });
+  await prisma.customerMemory.update({
+    where: { tenantId_contactId: { tenantId: base.tenant.id, contactId: base.contact.id } },
+    data: { lastReturnType: CustomerReturnType.FIRST_CONTACT, isReturningCustomer: false }
+  });
+  const memory = await getCustomerMemoryView({ tenantId: base.tenant.id, contactId: base.contact.id });
+  const result = evaluateCustomerAlertRules({
+    customerMemory: memory,
+    latestClassification: classification({ urgency: Urgency.URGENT }),
+    triggerMessage: { id: base.trigger.id, direction: "INBOUND" }
+  });
+
+  assert.equal(result, null);
+});
+
 test("ACTIVE_CONVERSATION normal no crea alerta", async () => {
   const base = await createReturnMemory({ label: "active", minutes: 120 });
   assert.equal(evaluateCustomerAlertRules({ customerMemory: base.memory, triggerMessage: { id: base.trigger.id, direction: "INBOUND" } }), null);
@@ -298,32 +330,231 @@ test("reactivacion con venta no afirma que no exista venta", async () => {
   assert.doesNotMatch(notification.description ?? "", /No hay una venta registrada/);
 });
 
+test("metadata compacto usa previousInteractionAt como ultimo contacto", async () => {
+  const base = await createReturnMemory({ label: "compact-date", minutes: 8 * 24 * 60 });
+  await evaluateAndCreateCustomerAlerts({ tenantId: base.tenant.id, contactId: base.contact.id, conversationId: base.conversation.id, triggerMessageId: base.trigger.id });
+  const notification = await prisma.notification.findFirstOrThrow({ where: { tenantId: base.tenant.id, metadata: { path: ["source"], equals: customerAlertSource } } });
+  const metadata = notification.metadata as Record<string, unknown>;
+  const compactSummary = metadata.compactSummary as Record<string, unknown>;
+
+  assert.equal(compactSummary.previousInteractionAt, minutesAfter(0).toISOString());
+});
+
+test("metadata compacto incluye cotizacion outbound con nombre y fecha", async () => {
+  const base = await createReturnMemory({ label: "compact-quote", minutes: 8 * 24 * 60 });
+  await prisma.message.create({
+    data: {
+      tenantId: base.tenant.id,
+      conversationId: base.conversation.id,
+      contactId: base.contact.id,
+      whatsappAccountId: base.account.id,
+      direction: MessageDirection.OUTBOUND,
+      type: MessageType.DOCUMENT,
+      text: "[Documento enviado: Cotizacion_Nexiq.pdf]",
+      providerMessageId: `quote-${base.trigger.id}`,
+      sentAt: minutesAfter(10)
+    }
+  });
+  await prisma.aIClassification.create({
+    data: {
+      tenantId: base.tenant.id,
+      contactId: base.contact.id,
+      conversationId: base.conversation.id,
+      messageId: base.trigger.id,
+      detectedIntent: AIIntent.QUOTE,
+      urgency: Urgency.MEDIUM,
+      confidence: 0.9,
+      rawResult: {
+        previousTopic: "Pregunto por laptop con Nexiq.",
+        currentRequest: "Quiere continuar con la compra en linea.",
+        interestStatus: "INTERESTED",
+        shortRecommendedAction: "Confirmar modelo y forma de pago."
+      }
+    }
+  });
+  await evaluateAndCreateCustomerAlerts({ tenantId: base.tenant.id, contactId: base.contact.id, conversationId: base.conversation.id, triggerMessageId: base.trigger.id });
+  const notification = await prisma.notification.findFirstOrThrow({ where: { tenantId: base.tenant.id, metadata: { path: ["source"], equals: customerAlertSource } } });
+  const metadata = notification.metadata as Record<string, unknown>;
+  const compactSummary = metadata.compactSummary as Record<string, unknown>;
+  const asset = compactSummary.lastSharedAsset as Record<string, unknown>;
+
+  assert.equal(compactSummary.interestStatus, "QUOTED");
+  assert.equal(asset.name, "Cotizacion_Nexiq.pdf");
+  assert.equal(asset.kind, "QUOTATION");
+  assert.equal(asset.sentAt, minutesAfter(10).toISOString());
+});
+
+async function createAlertWithOutboundAsset(input: {
+  label: string;
+  fileName: string;
+  text?: string;
+  saleStatus?: (typeof SaleStatus)[keyof typeof SaleStatus];
+}) {
+  const base = await createReturnMemory({ label: input.label, minutes: 8 * 24 * 60 });
+
+  if (input.saleStatus) {
+    await prisma.sale.create({
+      data: {
+        tenantId: base.tenant.id,
+        contactId: base.contact.id,
+        conversationId: base.conversation.id,
+        product: "Venta cancelada",
+        amountCents: 10000,
+        soldAt: minutesAfter(12),
+        status: input.saleStatus
+      }
+    });
+  }
+
+  await prisma.message.create({
+    data: {
+      tenantId: base.tenant.id,
+      conversationId: base.conversation.id,
+      contactId: base.contact.id,
+      whatsappAccountId: base.account.id,
+      direction: MessageDirection.OUTBOUND,
+      type: MessageType.DOCUMENT,
+      text: input.text ?? `[Documento enviado: ${input.fileName}]`,
+      providerMessageId: `asset-${base.trigger.id}`,
+      sentAt: minutesAfter(10)
+    }
+  });
+  await evaluateAndCreateCustomerAlerts({
+    tenantId: base.tenant.id,
+    contactId: base.contact.id,
+    conversationId: base.conversation.id,
+    triggerMessageId: base.trigger.id
+  });
+  const notification = await prisma.notification.findFirstOrThrow({
+    where: {
+      tenantId: base.tenant.id,
+      metadata: { path: ["source"], equals: customerAlertSource }
+    }
+  });
+  const metadata = notification.metadata as Record<string, unknown>;
+
+  return metadata.compactSummary as Record<string, unknown>;
+}
+
+test("Manual.pdf no fuerza QUOTED", async () => {
+  const compactSummary = await createAlertWithOutboundAsset({
+    label: "manual-pdf",
+    fileName: "Manual_Nexiq.pdf"
+  });
+  const asset = compactSummary.lastSharedAsset as Record<string, unknown>;
+
+  assert.notEqual(compactSummary.interestStatus, "QUOTED");
+  assert.equal(asset.name, "Manual_Nexiq.pdf");
+  assert.equal(asset.kind, "DOCUMENT");
+});
+
+test("Catalogo.pdf no fuerza QUOTED", async () => {
+  const compactSummary = await createAlertWithOutboundAsset({
+    label: "catalog-pdf",
+    fileName: "Catalogo_Nexiq.pdf"
+  });
+  const asset = compactSummary.lastSharedAsset as Record<string, unknown>;
+
+  assert.notEqual(compactSummary.interestStatus, "QUOTED");
+  assert.equal(asset.name, "Catalogo_Nexiq.pdf");
+  assert.equal(asset.kind, "CATALOG");
+});
+
+test("Cotizacion_Nexiq.pdf si se identifica como cotizacion", async () => {
+  const compactSummary = await createAlertWithOutboundAsset({
+    label: "quote-pdf",
+    fileName: "Cotizacion_Nexiq.pdf"
+  });
+  const asset = compactSummary.lastSharedAsset as Record<string, unknown>;
+
+  assert.equal(compactSummary.interestStatus, "QUOTED");
+  assert.equal(asset.kind, "QUOTATION");
+});
+
+test("archivo generico se muestra sin cambiar estado a QUOTED", async () => {
+  const compactSummary = await createAlertWithOutboundAsset({
+    label: "generic-file",
+    fileName: "Ficha_motor.pdf"
+  });
+  const asset = compactSummary.lastSharedAsset as Record<string, unknown>;
+
+  assert.equal(asset.name, "Ficha_motor.pdf");
+  assert.equal(asset.kind, "DOCUMENT");
+  assert.notEqual(compactSummary.interestStatus, "QUOTED");
+});
+
+test("CANCELLED y REFUNDED no afirman compra", async () => {
+  const cancelled = await createAlertWithOutboundAsset({
+    label: "cancelled-sale",
+    fileName: "Manual_Nexiq.pdf",
+    saleStatus: SaleStatus.CANCELLED
+  });
+  const refunded = await createAlertWithOutboundAsset({
+    label: "refunded-sale",
+    fileName: "Manual_Nexiq.pdf",
+    saleStatus: SaleStatus.REFUNDED
+  });
+
+  assert.equal(cancelled.lastSale, null);
+  assert.notEqual(cancelled.interestStatus, "PURCHASED");
+  assert.equal(refunded.lastSale, null);
+  assert.notEqual(refunded.interestStatus, "PURCHASED");
+});
+
+test("venta registrada tiene prioridad sobre interestStatus de IA", async () => {
+  const base = await createReturnMemory({ label: "compact-sale-priority", minutes: 8 * 24 * 60, sale: true });
+  await prisma.aIClassification.create({
+    data: {
+      tenantId: base.tenant.id,
+      contactId: base.contact.id,
+      conversationId: base.conversation.id,
+      messageId: base.trigger.id,
+      detectedIntent: AIIntent.QUOTE,
+      urgency: Urgency.MEDIUM,
+      confidence: 0.9,
+      rawResult: {
+        interestStatus: "INTERESTED",
+        currentRequest: "Quiere comprar otro equipo.",
+        shortRecommendedAction: "Revisar historial de compra."
+      }
+    }
+  });
+  await evaluateAndCreateCustomerAlerts({ tenantId: base.tenant.id, contactId: base.contact.id, conversationId: base.conversation.id, triggerMessageId: base.trigger.id });
+  const notification = await prisma.notification.findFirstOrThrow({ where: { tenantId: base.tenant.id, metadata: { path: ["source"], equals: customerAlertSource } } });
+  const metadata = notification.metadata as Record<string, unknown>;
+  const compactSummary = metadata.compactSummary as Record<string, unknown>;
+  const sale = compactSummary.lastSale as Record<string, unknown>;
+
+  assert.equal(compactSummary.interestStatus, "PURCHASED");
+  assert.equal(sale.product, "Venta registrada");
+});
+
 test("cliente con venta y solicitud de soporte genera alerta alta", async () => {
-  const base = await createReturnMemory({ label: "sale-support", minutes: 120, sale: true });
+  const base = await createReturnMemory({ label: "sale-support", minutes: 25 * 60, sale: true });
   const result = evaluateCustomerAlertRules({ customerMemory: base.memory, latestClassification: classification({ detectedIntent: AIIntent.SUPPORT, urgency: Urgency.MEDIUM }), triggerMessage: { id: base.trigger.id, direction: "INBOUND" } });
   assert.equal(result?.severity, "high");
 });
 
 test("prioridad HIGH genera alerta", async () => {
-  const base = await createReturnMemory({ label: "high", minutes: 120 });
+  const base = await createReturnMemory({ label: "high", minutes: 25 * 60 });
   const result = evaluateCustomerAlertRules({ customerMemory: base.memory, latestClassification: classification({ urgency: Urgency.HIGH }), triggerMessage: { id: base.trigger.id, direction: "INBOUND" } });
   assert.ok(result?.rules.includes("HIGH_PRIORITY_CUSTOMER_MESSAGE"));
 });
 
 test("prioridad URGENT usa severidad maxima", async () => {
-  const base = await createReturnMemory({ label: "urgent", minutes: 120 });
+  const base = await createReturnMemory({ label: "urgent", minutes: 25 * 60 });
   const result = evaluateCustomerAlertRules({ customerMemory: base.memory, latestClassification: classification({ urgency: Urgency.URGENT }), triggerMessage: { id: base.trigger.id, direction: "INBOUND" } });
   assert.equal(result?.severity, "urgent");
 });
 
 test("sentimiento negativo con confianza suficiente genera señal", async () => {
-  const base = await createReturnMemory({ label: "negative", minutes: 120 });
+  const base = await createReturnMemory({ label: "negative", minutes: 25 * 60 });
   const result = evaluateCustomerAlertRules({ customerMemory: base.memory, latestClassification: classification({ messageId: base.trigger.id, confidence: 0.9, rawResult: { sentiment: "NEGATIVE" } }), triggerMessage: { id: base.trigger.id, direction: "INBOUND" } });
   assert.ok(result?.rules.includes("NEGATIVE_CUSTOMER_SENTIMENT"));
 });
 
 test("sentimiento negativo con confianza baja no genera esa regla", async () => {
-  const base = await createReturnMemory({ label: "negative-low", minutes: 120 });
+  const base = await createReturnMemory({ label: "negative-low", minutes: 25 * 60 });
   const result = evaluateCustomerAlertRules({ customerMemory: base.memory, latestClassification: classification({ messageId: base.trigger.id, confidence: 0.2, rawResult: { sentiment: "NEGATIVE" } }), triggerMessage: { id: base.trigger.id, direction: "INBOUND" } });
   assert.equal(result?.rules.includes("NEGATIVE_CUSTOMER_SENTIMENT") ?? false, false);
 });
@@ -435,7 +666,7 @@ test("nueva reactivacion posterior al cooldown si genera alerta", async () => {
 });
 
 test("escalamiento de HIGH a URGENT no queda bloqueado", async () => {
-  const base = await createReturnMemory({ label: "urgent-bypass", minutes: 120 });
+  const base = await createReturnMemory({ label: "urgent-bypass", minutes: 25 * 60 });
   await prisma.aIClassification.create({ data: { tenantId: base.tenant.id, contactId: base.contact.id, conversationId: base.conversation.id, messageId: base.trigger.id, detectedIntent: AIIntent.INFORMATION, urgency: Urgency.URGENT, confidence: 0.9 } });
   await evaluateAndCreateCustomerAlerts({ tenantId: base.tenant.id, contactId: base.contact.id, conversationId: base.conversation.id, triggerMessageId: base.trigger.id });
   assert.equal(await prisma.notification.count({ where: { tenantId: base.tenant.id } }), 2);

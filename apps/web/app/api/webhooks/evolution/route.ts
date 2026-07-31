@@ -265,26 +265,9 @@ async function getResolvedEvolutionWebhookIgnoreReason(input: {
   normalized: NormalizedInboundMessage;
   env?: NodeJS.ProcessEnv;
 }) {
-  if (input.normalized.fromMe) {
-    return "OUTBOUND_FROM_ME" as const;
-  }
+  const remoteDigits = normalizePhoneDigits(input.normalized.fromPhone);
 
-  if (!areSharedWhatsappAlertsAllowed(input.env)) {
-    return null;
-  }
-
-  const settings = await prisma.tenantNotificationSettings.findUnique({
-    where: { tenantId: input.tenantId },
-    select: { whatsappAlertsAccountId: true }
-  });
-
-  if (settings?.whatsappAlertsAccountId !== input.whatsappAccountId) {
-    return null;
-  }
-
-  const fromDigits = normalizePhoneDigits(input.normalized.fromPhone);
-
-  if (!fromDigits) {
+  if (!remoteDigits) {
     return null;
   }
 
@@ -297,10 +280,27 @@ async function getResolvedEvolutionWebhookIgnoreReason(input: {
     select: { whatsappPhone: true }
   });
   const matchesInternalDestination = internalPreferences.some((preference) => {
-    return normalizePhoneDigits(preference.whatsappPhone) === fromDigits;
+    return normalizePhoneDigits(preference.whatsappPhone) === remoteDigits;
   });
 
-  return matchesInternalDestination ? ("INTERNAL_ALERT_REPLY" as const) : null;
+  if (input.normalized.fromMe) {
+    return matchesInternalDestination ? ("OUTBOUND_INTERNAL_ALERT" as const) : null;
+  }
+
+  if (!matchesInternalDestination || !areSharedWhatsappAlertsAllowed(input.env)) {
+    return null;
+  }
+
+  const settings = await prisma.tenantNotificationSettings.findUnique({
+    where: { tenantId: input.tenantId },
+    select: { whatsappAlertsAccountId: true }
+  });
+
+  if (settings?.whatsappAlertsAccountId !== input.whatsappAccountId) {
+    return null;
+  }
+
+  return "INTERNAL_ALERT_REPLY" as const;
 }
 
 export async function POST(request: Request) {
@@ -462,6 +462,10 @@ export async function POST(request: Request) {
   }
 
   try {
+    const isOutbound = normalized.fromMe;
+    const messageDirection = isOutbound
+      ? MessageDirection.OUTBOUND
+      : MessageDirection.INBOUND;
     const result = await prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
       const contact = await tx.contact.upsert({
@@ -471,13 +475,19 @@ export async function POST(request: Request) {
             normalizedPhoneNumber: normalized.fromPhone
           }
         },
-        update: {
-          name: normalized.contactName ?? undefined,
-          phoneNumber: normalized.fromPhone
-        },
+        update: isOutbound
+          ? {
+              phoneNumber: normalized.fromPhone
+            }
+          : {
+              name: normalized.contactName ?? undefined,
+              phoneNumber: normalized.fromPhone
+            },
         create: {
           tenantId: resolvedWhatsAppAccount.tenantId,
-          name: normalized.contactName ?? normalized.fromPhone,
+          name: isOutbound
+            ? normalized.fromPhone
+            : (normalized.contactName ?? normalized.fromPhone),
           normalizedPhoneNumber: normalized.fromPhone,
           phoneNumber: normalized.fromPhone,
           stage: ContactStage.NEW
@@ -493,9 +503,13 @@ export async function POST(request: Request) {
           tenantId: resolvedWhatsAppAccount.tenantId,
           contactId: contact.id,
           whatsappAccountId: resolvedWhatsAppAccount.id,
-          stage: {
-            not: ConversationStage.CLOSED
-          }
+          ...(isOutbound
+            ? {}
+            : {
+                stage: {
+                  not: ConversationStage.CLOSED
+                }
+              })
         },
         orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
         select: {
@@ -529,7 +543,7 @@ export async function POST(request: Request) {
           conversationId: conversation.id,
           contactId: contact.id,
           whatsappAccountId: resolvedWhatsAppAccount.id,
-          direction: MessageDirection.INBOUND,
+          direction: messageDirection,
           type: toMessageType(normalized.type),
           text: normalized.text,
           providerMessageId: normalized.providerMessageId,
@@ -550,9 +564,10 @@ export async function POST(request: Request) {
         },
         data: {
           lastMessageAt: normalized.timestamp,
-          stage: isOpenConversationStage(conversation.stage)
-            ? conversation.stage
-            : ConversationStage.OPEN
+          stage:
+            isOutbound || isOpenConversationStage(conversation.stage)
+              ? conversation.stage
+              : ConversationStage.OPEN
         }
       });
 
@@ -561,30 +576,35 @@ export async function POST(request: Request) {
           tenantId: resolvedWhatsAppAccount.tenantId,
           contactId: contact.id,
           conversationId: conversation.id,
-          type: CustomerEventType.NOTIFICATION_CREATED,
-          title: "Mensaje recibido",
+          type: isOutbound
+            ? CustomerEventType.INTERNAL_NOTE
+            : CustomerEventType.NOTIFICATION_CREATED,
+          title: isOutbound ? "Mensaje enviado" : "Mensaje recibido",
           description:
             normalized.text ??
-            `Mensaje entrante de tipo ${normalized.type.toLowerCase()}.`,
+            `Mensaje ${isOutbound ? "saliente" : "entrante"} de tipo ${normalized.type.toLowerCase()}.`,
           metadata: {
             messageId: message.id,
             providerMessageId: normalized.providerMessageId,
-            source: "evolution-webhook"
+            source: "evolution-webhook",
+            direction: messageDirection
           }
         }
       });
 
-      await tx.notification.create({
-        data: {
-          tenantId: resolvedWhatsAppAccount.tenantId,
-          userId: conversation.assignedUserId,
-          type: NotificationType.ACTION_REQUIRED,
-          title: "Nuevo mensaje entrante",
-          description: `${contact.name} escribio a ${
-            resolvedWhatsAppAccount.displayName ?? resolvedWhatsAppAccount.name
-          }.`
-        }
-      });
+      if (!isOutbound) {
+        await tx.notification.create({
+          data: {
+            tenantId: resolvedWhatsAppAccount.tenantId,
+            userId: conversation.assignedUserId,
+            type: NotificationType.ACTION_REQUIRED,
+            title: "Nuevo mensaje entrante",
+            description: `${contact.name} escribio a ${
+              resolvedWhatsAppAccount.displayName ?? resolvedWhatsAppAccount.name
+            }.`
+          }
+        });
+      }
 
       await tx.auditLog.create({
         data: {
@@ -596,7 +616,8 @@ export async function POST(request: Request) {
             provider: "EVOLUTION",
             providerMessageId: normalized.providerMessageId,
             conversationId: conversation.id,
-            contactId: contact.id
+            contactId: contact.id,
+            direction: messageDirection
           }
         }
       });
@@ -609,13 +630,15 @@ export async function POST(request: Request) {
       }
     );
 
-    // La IA se procesa en background por apps/worker para que el webhook responda rapido.
-    const aiQueue = await enqueueAiClassification({
-      tenantId: resolvedWhatsAppAccount.tenantId,
-      contactId: result.contactId,
-      conversationId: result.conversationId,
-      messageId: result.messageId
-    });
+    // La IA se procesa en background solo para mensajes entrantes.
+    const aiQueue = isOutbound
+      ? ({ status: "skipped_outbound" as const })
+      : await enqueueAiClassification({
+          tenantId: resolvedWhatsAppAccount.tenantId,
+          contactId: result.contactId,
+          conversationId: result.conversationId,
+          messageId: result.messageId
+        });
 
     await prisma.webhookLog.update({
       where: { id: webhookLog.id },

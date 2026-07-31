@@ -17,6 +17,14 @@ export type ClassificationSentiment =
   | "ANGRY"
   | "UNKNOWN";
 
+export type ClassificationInterestStatus =
+  | "INTERESTED"
+  | "QUOTED"
+  | "PURCHASED"
+  | "NOT_INTERESTED"
+  | "FOLLOW_UP"
+  | "UNKNOWN";
+
 export type ConversationClassification = {
   intent: AIIntent;
   urgency: Urgency;
@@ -30,6 +38,11 @@ export type ConversationClassification = {
   detectedSupportConcern: boolean;
   detectedConfigurationConcern: boolean;
   sentiment: ClassificationSentiment;
+  previousTopic: string | null;
+  currentRequest: string;
+  interestStatus: ClassificationInterestStatus;
+  interestSummary: string | null;
+  shortRecommendedAction: string;
   shouldCreateNotification: boolean;
   notificationTitle: string | null;
   notificationDescription: string | null;

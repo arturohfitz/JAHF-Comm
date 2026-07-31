@@ -52,6 +52,8 @@ process.env.AI_CLASSIFICATION_ENABLED = "false";
 
 const {
   ContactStage,
+  MessageDirection,
+  MessageType,
   MembershipRole,
   WhatsAppAccountStatus,
   WhatsAppProvider,
@@ -111,6 +113,8 @@ function payload(input: {
   fromPhone: string;
   providerMessageId: string;
   fromMe?: boolean;
+  pushName?: string;
+  message?: Record<string, unknown>;
 }) {
   return {
     instance: input.instanceName,
@@ -120,8 +124,8 @@ function payload(input: {
         remoteJid: `${input.fromPhone.replace(/\D/g, "")}@s.whatsapp.net`,
         fromMe: input.fromMe
       },
-      pushName: "Cliente Prueba",
-      message: {
+      pushName: input.pushName ?? "Cliente Prueba",
+      message: input.message ?? {
         conversation: "Hola, necesito informacion"
       },
       messageTimestamp: 1760000000
@@ -148,19 +152,42 @@ async function postEvolutionWebhook(body: unknown) {
 }
 
 async function businessCounts(tenantId: string) {
-  const [contacts, conversations, messages, aiClassifications] =
+  const [contacts, conversations, messages, aiClassifications, notifications] =
     await Promise.all([
       prisma.contact.count({ where: { tenantId } }),
       prisma.conversation.count({ where: { tenantId } }),
       prisma.message.count({ where: { tenantId } }),
-      prisma.aIClassification.count({ where: { tenantId } })
+      prisma.aIClassification.count({ where: { tenantId } }),
+      prisma.notification.count({ where: { tenantId } })
     ]);
 
-  return { contacts, conversations, messages, aiClassifications };
+  return { contacts, conversations, messages, aiClassifications, notifications };
 }
 
-test("webhook ignora fromMe=true sin crear datos de negocio ni IA", async () => {
-  const { tenant, account } = await createTenantAccount("from-me");
+test("webhook ignora fromMe=true hacia numero interno", async () => {
+  const { tenant, account } = await createTenantAccount("from-me-internal");
+  const user = await prisma.user.create({
+    data: {
+      email: `${nextId("internal-user")}@example.com`
+    }
+  });
+
+  await prisma.membership.create({
+    data: {
+      tenantId: tenant.id,
+      userId: user.id,
+      role: MembershipRole.OWNER
+    }
+  });
+  await prisma.notificationPreference.create({
+    data: {
+      tenantId: tenant.id,
+      userId: user.id,
+      whatsappEnabled: true,
+      whatsappPhone: "+52 1 55 1111 1111"
+    }
+  });
+
   const before = await businessCounts(tenant.id);
   const result = await postEvolutionWebhook(
     payload({
@@ -176,10 +203,139 @@ test("webhook ignora fromMe=true sin crear datos de negocio ni IA", async () => 
   assert.deepEqual(result.body, {
     ok: true,
     ignored: true,
-    reason: "OUTBOUND_FROM_ME"
+    reason: "OUTBOUND_INTERNAL_ALERT"
   });
   assert.deepEqual(afterCounts, before);
   assert.equal("aiQueue" in result.body, false);
+});
+
+test("webhook guarda fromMe=true hacia cliente como OUTBOUND sin IA ni notificacion", async () => {
+  const { tenant, account } = await createTenantAccount("from-me-customer");
+  const contact = await prisma.contact.create({
+    data: {
+      tenantId: tenant.id,
+      name: "Pedro Ramirez",
+      normalizedPhoneNumber: "+5215566667777",
+      phoneNumber: "+5215566667777",
+      stage: ContactStage.PROSPECT
+    }
+  });
+  const result = await postEvolutionWebhook(
+    payload({
+      instanceName: account.instanceName!,
+      fromPhone: "+5215566667777",
+      providerMessageId: "from-me-customer-message",
+      fromMe: true,
+      pushName: "JAHF Services",
+      message: {
+        conversation: "Te comparto la cotizacion."
+      }
+    })
+  );
+  const savedContact = await prisma.contact.findUniqueOrThrow({
+    where: {
+      tenantId_id: {
+        tenantId: tenant.id,
+        id: contact.id
+      }
+    }
+  });
+  const message = await prisma.message.findFirstOrThrow({
+    where: {
+      tenantId: tenant.id,
+      providerMessageId: "from-me-customer-message"
+    }
+  });
+  const counts = await businessCounts(tenant.id);
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.ok, true);
+  assert.equal(result.body.ignored, undefined);
+  assert.deepEqual(result.body.aiQueue, { status: "skipped_outbound" });
+  assert.equal(message.direction, MessageDirection.OUTBOUND);
+  assert.equal(message.text, "Te comparto la cotizacion.");
+  assert.equal(savedContact.name, "Pedro Ramirez");
+  assert.equal(counts.contacts, 1);
+  assert.equal(counts.conversations, 1);
+  assert.equal(counts.messages, 1);
+  assert.equal(counts.notifications, 0);
+});
+
+test("webhook outbound duplicado respeta idempotencia", async () => {
+  const { tenant, account } = await createTenantAccount("outbound-duplicate");
+  const body = payload({
+    instanceName: account.instanceName!,
+    fromPhone: "+5215577778888",
+    providerMessageId: "outbound-duplicate-message",
+    fromMe: true
+  });
+  const first = await postEvolutionWebhook(body);
+  const second = await postEvolutionWebhook(body);
+  const counts = await businessCounts(tenant.id);
+
+  assert.equal(first.status, 200);
+  assert.equal(second.body.duplicate, true);
+  assert.equal(counts.messages, 1);
+});
+
+test("webhook outbound documento guarda nombre del archivo", async () => {
+  const { tenant, account } = await createTenantAccount("outbound-document");
+  const result = await postEvolutionWebhook(
+    payload({
+      instanceName: account.instanceName!,
+      fromPhone: "+5215588889999",
+      providerMessageId: "outbound-document-message",
+      fromMe: true,
+      message: {
+        documentMessage: {
+          fileName: "Cotizacion_Nexiq.pdf"
+        }
+      }
+    })
+  );
+  const message = await prisma.message.findFirstOrThrow({
+    where: {
+      tenantId: tenant.id,
+      providerMessageId: "outbound-document-message"
+    }
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(message.direction, MessageDirection.OUTBOUND);
+  assert.equal(message.type, MessageType.DOCUMENT);
+  assert.equal(message.text, "[Documento enviado: Cotizacion_Nexiq.pdf]");
+});
+
+test("webhook outbound documento con caption guarda fileName y comentario", async () => {
+  const { tenant, account } = await createTenantAccount("outbound-document-caption");
+  const result = await postEvolutionWebhook(
+    payload({
+      instanceName: account.instanceName!,
+      fromPhone: "+5215599990000",
+      providerMessageId: "outbound-document-caption-message",
+      fromMe: true,
+      message: {
+        documentMessage: {
+          fileName: "Cotizacion_Nexiq.pdf",
+          caption: "Te comparto la propuesta solicitada."
+        }
+      }
+    })
+  );
+  const message = await prisma.message.findFirstOrThrow({
+    where: {
+      tenantId: tenant.id,
+      providerMessageId: "outbound-document-caption-message"
+    }
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(message.direction, MessageDirection.OUTBOUND);
+  assert.equal(message.type, MessageType.DOCUMENT);
+  assert.equal(
+    message.text,
+    "[Documento enviado: Cotizacion_Nexiq.pdf]\nComentario: Te comparto la propuesta solicitada."
+  );
 });
 
 test("webhook ignora respuesta interna solo en modo compartido", async () => {

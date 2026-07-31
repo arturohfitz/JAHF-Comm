@@ -15,7 +15,8 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:classifier": "tsx scripts/test-classifier.ts"
+    "test:classifier": "tsx scripts/test-classifier.ts",
+    "test:schema": "tsx --test tests/schema.test.ts"
   },
   "dependencies": {
     "@jahf-comm/db": "workspace:*",
