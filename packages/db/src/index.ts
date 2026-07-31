@@ -50,6 +50,7 @@ export {
   NotificationSeverity,
   NotificationType,
   PaymentStatus,
+  PlatformRole,
   Prisma,
   PrismaClient,
   SaleStatus,

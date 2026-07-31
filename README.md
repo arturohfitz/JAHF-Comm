@@ -98,14 +98,37 @@ cp .env.production.example .env.production
 NODE_ENV=production pnpm production:check
 ```
 
-After building and starting services, run migrations and create the first owner account:
+Before running production migrations that add global Evolution identity
+constraints, check that existing WhatsApp accounts do not reuse the same
+`instanceName`, `providerInstanceId`, or `providerAccountId`:
+
+```bash
+pnpm production:check-evolution-identities
+```
+
+After building and starting services, run migrations and create the first owner
+or platform administrator account:
 
 ```bash
 pnpm production:migrate
 pnpm production:seed-admin
+pnpm production:create-platform-admin
 ```
 
 The production admin script requires `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_TENANT_NAME`, and `ADMIN_TENANT_SLUG`. It hashes the password and does not print secrets.
+
+The platform admin script requires `PLATFORM_ADMIN_EMAIL`,
+`PLATFORM_ADMIN_PASSWORD`, and `PLATFORM_ADMIN_NAME`. It creates or updates a
+`SUPER_ADMIN` user without Membership or Tenant, sets `mustChangePassword=true`,
+and does not print the password. For a demo deployment, run it with temporary
+environment variables such as:
+
+```bash
+PLATFORM_ADMIN_EMAIL=master.demo@jahfconnect.com \
+PLATFORM_ADMIN_PASSWORD=<temporary-secret> \
+PLATFORM_ADMIN_NAME="Administrador Maestro Demo" \
+pnpm production:create-platform-admin
+```
 
 ## Root Scripts
 
@@ -122,13 +145,25 @@ The production admin script requires `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_TEN
 - `pnpm production:check` validates required production environment variables.
 - `pnpm production:migrate` runs Prisma migrations for deployment.
 - `pnpm production:seed-admin` creates or updates the first production owner account.
+- `pnpm production:create-platform-admin` creates or updates the platform super admin.
+- `pnpm production:check-evolution-identities` checks Evolution identifiers before migration.
 - `pnpm production:build` builds all workspace packages for production.
 
 ## Authentication
 
-The web app uses an HTTP-only session cookie backed by the `AuthSession` table. The cookie stores only a random session token; PostgreSQL stores a secret-keyed hash of that token. In production, `SESSION_SECRET` is required. The active tenant is resolved from the authenticated user's first `Membership`.
+The web app uses an HTTP-only session cookie backed by the `AuthSession` table. The cookie stores only a random session token; PostgreSQL stores a secret-keyed hash of that token. In production, `SESSION_SECRET` is required.
 
-Protected web routes redirect unauthenticated users to `/login`. Settings routes require `OWNER` or `ADMIN`; inbox actions allow `OWNER`, `ADMIN`, and `AGENT`. The Evolution webhook remains separate from browser sessions and uses `x-webhook-secret`.
+Sessions now store an explicit `activeTenantId`. Normal users may only activate
+tenants where they have a real `Membership`; a `SUPER_ADMIN` can enter any
+tenant from `/platform` and operates with effective `OWNER` permissions without
+creating a fake Membership. Tenant entry and exit by platform administrators are
+written to `AuditLog`.
+
+Protected web routes redirect unauthenticated users to `/login`. Users with
+temporary passwords are sent to `/change-password`. Tenants that have not
+finished setup are sent to `/onboarding`. Settings routes require `OWNER` or
+`ADMIN`; inbox actions allow `OWNER`, `ADMIN`, and `AGENT`. The Evolution webhook
+remains separate from browser sessions and uses `x-webhook-secret`.
 
 ## Healthcheck
 

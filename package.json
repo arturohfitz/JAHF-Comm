@@ -20,6 +20,8 @@
     "queue:test": "pnpm --filter @jahf-comm/worker queue:test",
     "production:migrate": "pnpm db:migrate",
     "production:seed-admin": "pnpm --filter @jahf-comm/db production:seed-admin",
+    "production:create-platform-admin": "pnpm --filter @jahf-comm/db production:create-platform-admin",
+    "production:check-evolution-identities": "pnpm --filter @jahf-comm/db production:check-evolution-identities",
     "production:build": "pnpm build",
     "production:check": "node scripts/validate-production-env.mjs"
   },
