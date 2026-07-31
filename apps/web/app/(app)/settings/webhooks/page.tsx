@@ -40,9 +40,9 @@ function formatRawPayload(value: unknown) {
 }
 
 export default async function WebhookLogsPage() {
-  const { tenant, membership } = await requireAuth();
+  const { tenant, effectiveRole } = await requireAuth();
 
-  if (!canManageSettings(membership.role)) {
+  if (!canManageSettings(effectiveRole)) {
     return (
       <>
         <PageHeader

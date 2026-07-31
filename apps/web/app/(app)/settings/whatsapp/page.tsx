@@ -444,7 +444,7 @@ function MyNotificationPreferenceForm({
 export default async function WhatsAppSettingsPage({
   searchParams
 }: WhatsAppSettingsPageProps) {
-  const { tenant, membership, user } = await requireAuth();
+  const { tenant, effectiveRole, user } = await requireAuth();
   const params = await searchParams;
   const feedback = getWhatsappSettingsFeedback(params);
 
@@ -509,7 +509,7 @@ export default async function WhatsAppSettingsPage({
     const runtime = getSafeWhatsappRuntimeState();
     const allowSharedAccount =
       process.env.WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT === "true";
-    const canManageTenantSettings = canManageSettings(membership.role);
+    const canManageTenantSettings = canManageSettings(effectiveRole);
     const conversationAccountIds = new Set(
       conversationAccounts.map((account) => account.whatsappAccountId)
     );
@@ -550,7 +550,7 @@ export default async function WhatsAppSettingsPage({
 
           <MyNotificationPreferenceForm
             preference={preference}
-            role={membership.role}
+            role={effectiveRole}
           />
 
           {canManageTenantSettings && accounts.length === 0 ? (

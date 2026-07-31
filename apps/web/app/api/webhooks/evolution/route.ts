@@ -168,58 +168,65 @@ async function resolveWhatsAppAccount(input: {
 }) {
   const instanceCandidates = getInstanceCandidates(input);
 
-  const whatsappAccount =
-    instanceCandidates.length > 0
-      ? await prisma.whatsAppAccount.findFirst({
-          where: {
-            provider: WhatsAppProvider.EVOLUTION,
-            OR: [
-              {
-                providerInstanceId: {
-                  in: instanceCandidates
-                }
-              },
-              {
-                instanceName: {
-                  in: instanceCandidates
-                }
-              },
-              {
-                providerAccountId: {
-                  in: instanceCandidates
-                }
-              }
-            ]
-          },
-          select: {
-            id: true,
-            tenantId: true,
-            name: true,
-            displayName: true
-          }
-        })
-      : null;
-
-  return (
-    whatsappAccount ??
-    (instanceCandidates.length === 0 && isDemoFallbackAllowed()
-      ? prisma.whatsAppAccount.findFirst({
-          where: {
-            provider: WhatsAppProvider.EVOLUTION,
-            tenant: {
-              slug: "jahf-demo"
+  if (instanceCandidates.length > 0) {
+    const accounts = await prisma.whatsAppAccount.findMany({
+      where: {
+        provider: WhatsAppProvider.EVOLUTION,
+        OR: [
+          {
+            providerInstanceId: {
+              in: instanceCandidates
             }
           },
-          orderBy: { createdAt: "asc" },
-          select: {
-            id: true,
-            tenantId: true,
-            name: true,
-            displayName: true
+          {
+            instanceName: {
+              in: instanceCandidates
+            }
+          },
+          {
+            providerAccountId: {
+              in: instanceCandidates
+            }
           }
-        })
-      : null)
-  );
+        ]
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        name: true,
+        displayName: true
+      },
+      take: 2
+    });
+
+    if (accounts.length > 1) {
+      return { status: "duplicate" as const, account: null };
+    }
+
+    return { status: "resolved" as const, account: accounts[0] ?? null };
+  }
+
+  if (isDemoFallbackAllowed()) {
+    const account = await prisma.whatsAppAccount.findFirst({
+      where: {
+        provider: WhatsAppProvider.EVOLUTION,
+        tenant: {
+          slug: "jahf-demo"
+        }
+      },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        tenantId: true,
+        name: true,
+        displayName: true
+      }
+    });
+
+    return { status: "resolved" as const, account };
+  }
+
+  return { status: "resolved" as const, account: null };
 }
 
 async function enqueueAiClassification(input: {
@@ -370,10 +377,29 @@ export async function POST(request: Request) {
     );
   }
 
-  const resolvedWhatsAppAccount = await resolveWhatsAppAccount({
+  const resolved = await resolveWhatsAppAccount({
     instanceName: normalized.instanceName,
     providerInstanceId: normalized.providerInstanceId
   });
+  const resolvedWhatsAppAccount = resolved.account;
+
+  if (resolved.status === "duplicate") {
+    await prisma.webhookLog.update({
+      where: { id: webhookLog.id },
+      data: {
+        status: WebhookLogStatus.FAILED,
+        httpStatus: 409,
+        errorMessage: "Multiple tenant WhatsApp accounts matched Evolution identity."
+      }
+    });
+
+    return NextResponse.json(
+      {
+        error: "Multiple tenant WhatsApp accounts matched Evolution identity."
+      },
+      { status: 409 }
+    );
+  }
 
   if (!resolvedWhatsAppAccount) {
     await prisma.webhookLog.update({

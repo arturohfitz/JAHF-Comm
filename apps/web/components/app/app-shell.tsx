@@ -1,11 +1,16 @@
 import { logoutAction } from "@/app/login/actions";
-import { requireAuth } from "@/lib/auth";
+import { clearActiveTenantForSession, requireAuth } from "@/lib/auth";
 
 import { NotificationBell } from "./notification-bell";
 import { Sidebar } from "./sidebar";
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
   const session = await requireAuth();
+  async function exitTenantAction() {
+    "use server";
+
+    await clearActiveTenantForSession();
+  }
 
   return (
     <div className="min-h-screen bg-muted/35 text-foreground md:flex">
@@ -13,6 +18,23 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         <Sidebar />
       </div>
       <div className="min-w-0 flex-1">
+        {session.isPlatformTenantAccess ? (
+          <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-sm text-amber-900 md:px-8">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="font-medium">
+                Modo administrador maestro · Viendo: {session.tenant.name}
+              </span>
+              <form action={exitTenantAction}>
+                <button
+                  className="h-8 rounded-md border border-amber-300 bg-white px-3 text-xs font-semibold transition-colors hover:bg-amber-100"
+                  type="submit"
+                >
+                  Salir del tenant
+                </button>
+              </form>
+            </div>
+          </div>
+        ) : null}
         <header className="sticky top-0 z-10 border-b bg-background/95 px-5 py-4 backdrop-blur md:px-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -31,7 +53,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
                   {session.user.name ?? session.user.email}
                 </span>
                 <span className="ml-2 rounded-md bg-muted px-2 py-1 text-xs font-medium">
-                  {session.membership.role}
+                  {session.effectiveRole}
                 </span>
               </div>
               <form action={logoutAction}>

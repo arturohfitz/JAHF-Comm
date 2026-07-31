@@ -104,39 +104,59 @@ async function assertUniqueWhatsAppAccount(
     normalizedPhoneNumber: string;
     instanceName: string | null;
     providerInstanceId: string | null;
+    providerAccountId: string | null;
     excludeAccountId?: string;
   }
 ) {
-  const orFilters: Prisma.WhatsAppAccountWhereInput[] = [
-    { normalizedPhoneNumber: input.normalizedPhoneNumber }
-  ];
+  const phoneAccount = await tx.whatsAppAccount.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      normalizedPhoneNumber: input.normalizedPhoneNumber,
+      id: input.excludeAccountId ? { not: input.excludeAccountId } : undefined
+    },
+    select: { id: true }
+  });
+
+  if (phoneAccount) {
+    throw new Error("Ya existe una cuenta WhatsApp con el mismo telefono en este tenant.");
+  }
+
+  const identityFilters: Prisma.WhatsAppAccountWhereInput[] = [];
 
   if (input.instanceName) {
-    orFilters.push({
-      provider: input.provider,
+    identityFilters.push({
       instanceName: input.instanceName
     });
   }
 
   if (input.providerInstanceId) {
-    orFilters.push({
-      provider: input.provider,
+    identityFilters.push({
       providerInstanceId: input.providerInstanceId
     });
   }
 
-  const account = await tx.whatsAppAccount.findFirst({
+  if (input.providerAccountId) {
+    identityFilters.push({
+      providerAccountId: input.providerAccountId
+    });
+  }
+
+  if (identityFilters.length === 0) {
+    return;
+  }
+
+  const identityAccount = await tx.whatsAppAccount.findFirst({
     where: {
-      tenantId: input.tenantId,
+      provider: input.provider,
       id: input.excludeAccountId ? { not: input.excludeAccountId } : undefined,
-      OR: orFilters
+      OR: identityFilters
     },
-    select: { id: true }
+    select: { id: true, tenantId: true }
   });
 
-  if (account) {
+  if (identityAccount) {
     throw new Error(
-      "Ya existe una cuenta WhatsApp con el mismo telefono, instanceName o providerInstanceId en este tenant."
+      "Ya existe una cuenta WhatsApp con el mismo instanceName, providerInstanceId o providerAccountId global."
     );
   }
 }
@@ -176,7 +196,8 @@ export async function createWhatsAppAccount(formData: FormData) {
       provider,
       normalizedPhoneNumber,
       instanceName: instance.instanceName,
-      providerInstanceId: instance.providerInstanceId
+      providerInstanceId: instance.providerInstanceId,
+      providerAccountId: instance.providerAccountId
     });
 
     const account = await tx.whatsAppAccount.create({
@@ -280,6 +301,7 @@ export async function updateWhatsAppAccountAction(formData: FormData) {
       normalizedPhoneNumber,
       instanceName: instance.instanceName,
       providerInstanceId: instance.providerInstanceId,
+      providerAccountId: instance.providerAccountId,
       excludeAccountId: accountId
     });
 
@@ -473,7 +495,7 @@ export async function updateTenantWhatsappAlertSettingsAction(
 export async function updateMyWhatsappNotificationPreferenceAction(
   formData: FormData
 ) {
-  const { tenant, user, membership } = await requireRole([
+  const { tenant, user, effectiveRole } = await requireRole([
     MembershipRole.OWNER,
     MembershipRole.ADMIN,
     MembershipRole.AGENT,
@@ -491,7 +513,7 @@ export async function updateMyWhatsappNotificationPreferenceAction(
     : null;
   let minimumSeverity: NotificationSeverity;
 
-  if (whatsappEnabled && membership.role === MembershipRole.VIEWER) {
+  if (whatsappEnabled && effectiveRole === MembershipRole.VIEWER) {
     redirectToWhatsappSettings("error=viewer-whatsapp-alerts");
   }
 

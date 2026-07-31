@@ -1,7 +1,7 @@
 "use server";
 
 import { verifyPassword } from "@jahf-comm/shared/passwords";
-import { prisma } from "@jahf-comm/db";
+import { PlatformRole, prisma } from "@jahf-comm/db";
 import { redirect } from "next/navigation";
 
 import { createSession, destroyCurrentSession } from "@/lib/auth";
@@ -26,17 +26,26 @@ export async function loginAction(formData: FormData) {
     select: {
       id: true,
       passwordHash: true,
+      mustChangePassword: true,
+      platformRole: true,
       memberships: {
-        take: 1,
+        orderBy: { createdAt: "asc" },
         select: {
-          id: true
+          id: true,
+          tenant: {
+            select: {
+              id: true,
+              onboardingCompletedAt: true
+            }
+          }
         }
       }
     }
   });
   const validPassword = await verifyPassword(password, user?.passwordHash);
+  const isPlatformAdmin = user?.platformRole === PlatformRole.SUPER_ADMIN;
 
-  if (!user || !validPassword || user.memberships.length === 0) {
+  if (!user || !validPassword || (!isPlatformAdmin && user.memberships.length === 0)) {
     redirect("/login?error=invalid");
   }
 
@@ -44,7 +53,28 @@ export async function loginAction(formData: FormData) {
     where: { id: user.id },
     data: { lastLoginAt: new Date() }
   });
-  await createSession(user.id);
+  const singleMembership =
+    !isPlatformAdmin && user.memberships.length === 1
+      ? user.memberships[0]
+      : null;
+
+  await createSession(user.id, singleMembership?.tenant.id ?? null);
+
+  if (user.mustChangePassword) {
+    redirect("/change-password");
+  }
+
+  if (isPlatformAdmin) {
+    redirect("/platform");
+  }
+
+  if (!singleMembership) {
+    redirect("/select-tenant");
+  }
+
+  if (!singleMembership.tenant.onboardingCompletedAt) {
+    redirect("/onboarding");
+  }
 
   redirect("/dashboard");
 }
