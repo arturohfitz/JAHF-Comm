@@ -204,6 +204,7 @@ type CompactAlertSummary = {
   lastSharedAsset: {
     name: string;
     type: string;
+    kind: string;
     sentAt: string;
   } | null;
   lastSale: {
@@ -250,6 +251,10 @@ function readCompactSummary(value: unknown): CompactAlertSummary | null {
         ? {
             name: readString(lastSharedAsset.name) as string,
             type: readString(lastSharedAsset.type) as string,
+            kind:
+              readString(lastSharedAsset.kind) ??
+              readString(lastSharedAsset.type) ??
+              "DOCUMENT",
             sentAt: readString(lastSharedAsset.sentAt) as string
           }
         : null,
@@ -341,18 +346,22 @@ function formatCompactInactivity(minutes: number | null) {
 
   const days = Math.round(hours / 24);
 
-  return `hace ${days} dias`;
+  return `hace ${days} días`;
 }
 
 function compactInterestStatus(input: CompactAlertSummary, timezone: string) {
-  if (input.lastSale) {
+  if (input.lastSale?.status === "PAID") {
     const date = formatDateEsMx(input.lastSale.soldAt, timezone);
 
-    return `compro ${input.lastSale.product}${date ? ` el ${date}` : ""}.`;
+    return `compró ${input.lastSale.product}${date ? ` el ${date}` : ""}.`;
   }
 
-  if (input.lastSharedAsset) {
-    return "cotizacion enviada; compra no registrada.";
+  if (input.lastSale?.status === "PENDING") {
+    return `venta registrada de ${input.lastSale.product}; pendiente de confirmación o pago.`;
+  }
+
+  if (input.lastSharedAsset?.kind === "QUOTATION") {
+    return "interesado; compra no registrada.";
   }
 
   if (input.interestStatus === "INTERESTED" && input.interestSummary) {
@@ -362,32 +371,62 @@ function compactInterestStatus(input: CompactAlertSummary, timezone: string) {
   }
 
   if (input.interestStatus === "NOT_INTERESTED") {
-    return "indico que no esta interesado por ahora.";
+    return "indicó que no está interesado por ahora.";
   }
 
   if (input.interestStatus === "FOLLOW_UP") {
     return "seguimiento pendiente.";
   }
 
+  if (input.interestStatus === "PURCHASED") {
+    return null;
+  }
+
+  if (
+    input.interestSummary &&
+    /(compr[oó]|adquiri[oó]|adquirió|compra registrada)/i.test(input.interestSummary)
+  ) {
+    return null;
+  }
+
   return input.interestSummary;
 }
 
-function limitCompactBody(lines: string[], maxLength: number) {
-  const limited: string[] = [];
-  let length = 0;
+function compactLinesLength(lines: string[]) {
+  return lines.join("\n").length;
+}
 
-  for (const line of lines) {
-    const nextLength = length + (limited.length > 0 ? 1 : 0) + line.length;
+function limitCompactLines(input: {
+  required: string[];
+  optional: string[];
+  maxLength: number;
+  maxLines: number;
+}) {
+  const currentIndex = input.required.findIndex((line) => line.startsWith("💬"));
+  const splitIndex = currentIndex >= 0 ? currentIndex : Math.max(input.required.length - 1, 0);
+  const prefix = input.required.slice(0, splitIndex);
+  const suffix = input.required.slice(splitIndex);
+  const selectedOptional: string[] = [];
 
-    if (nextLength > maxLength) {
+  if (input.required.length > input.maxLines) {
+    return input.required.slice(0, input.maxLines);
+  }
+
+  for (const line of input.optional) {
+    if (prefix.length + selectedOptional.length + suffix.length >= input.maxLines) {
+      break;
+    }
+
+    const candidate = [...prefix, ...selectedOptional, line, ...suffix];
+
+    if (compactLinesLength(candidate) > input.maxLength) {
       continue;
     }
 
-    limited.push(line);
-    length = nextLength;
+    selectedOptional.push(line);
   }
 
-  return limited;
+  return [...prefix, ...selectedOptional, ...suffix];
 }
 
 function maskDestination(value: string) {
@@ -582,44 +621,52 @@ export function buildWhatsAppNotificationText(input: {
       timezone
     );
     const status = compactInterestStatus(compactSummary, timezone);
-    const attentionLine = compactSummary.attention.negative
-      ? "⚠️ Cliente molesto"
+    const attentionMarker =
+      compactSummary.attention.negative || compactSummary.attention.urgent
+        ? "⚠️"
+        : "";
+    const currentPrefix = compactSummary.attention.negative
+      ? "cliente molesto; "
       : compactSummary.attention.urgent
-        ? "⚠️ Solicitud urgente"
-        : null;
-    const rawLines = [
-      `🔔 ${truncateLine(input.contactName ?? input.title, 80)} volvio a escribir${
+        ? "solicitud urgente; "
+        : "";
+    const header = `🔔${attentionMarker} ${truncateLine(input.contactName ?? input.title, 60)} volvió${
         maskCompactPhone(input.contactPhone)
           ? ` · ${maskCompactPhone(input.contactPhone)}`
           : ""
-      }`,
-      previousDate
-        ? `📅 Ultimo contacto: ${previousDate}${inactivity ? ` · ${inactivity}` : ""}`
-        : null,
+      }`;
+    const dateLine = previousDate
+      ? `📅 ${previousDate}${inactivity ? ` · ${inactivity}` : ""}`
+      : null;
+    const currentLine = compactSummary.currentRequest
+      ? `💬 Ahora: ${truncateLine(`${currentPrefix}${compactSummary.currentRequest}`, 110)}`
+      : "💬 Ahora: requiere seguimiento.";
+    const actionLine = `➡️ ${truncateLine(
+      compactSummary.shortRecommendedAction ?? input.recommendedAction ?? "Revisar conversación y responder.",
+      110
+    )}`;
+    const requiredLines = [header, dateLine, currentLine, actionLine].filter(
+      (line): line is string => Boolean(line)
+    );
+    const optionalLines = [
       compactSummary.previousTopic
-        ? `🧩 Antes: ${truncateLine(compactSummary.previousTopic, 150)}`
+        ? `🧩 Antes: ${truncateLine(compactSummary.previousTopic, 105)}`
         : null,
-      status ? `💼 Estado: ${truncateLine(status, 150)}` : null,
+      status ? `💼 Estado: ${truncateLine(status, 105)}` : null,
       compactSummary.lastSharedAsset
-        ? `📎 Enviado: ${truncateLine(compactSummary.lastSharedAsset.name, 110)}${
+        ? `📎 ${truncateLine(compactSummary.lastSharedAsset.name, 90)}${
             assetDate ? ` · ${assetDate}` : ""
           }`
-        : null,
-      compactSummary.currentRequest
-        ? `💬 Ahora: ${truncateLine(compactSummary.currentRequest, 150)}`
-        : null,
-      attentionLine,
-      compactSummary.shortRecommendedAction
-        ? `➡️ Accion: ${truncateLine(compactSummary.shortRecommendedAction, 150)}`
         : null
     ].filter((line): line is string => Boolean(line));
-    const lines =
-      rawLines.length > 7 && attentionLine
-        ? rawLines.filter((line) => !line.startsWith("🧩 Antes:"))
-        : rawLines;
-    const limitedLines = limitCompactBody(lines, 900);
+    const limitedLines = limitCompactLines({
+      required: requiredLines,
+      optional: optionalLines,
+      maxLength: 650,
+      maxLines: 7
+    });
     const withUrl = input.url
-      ? [...limitedLines.slice(0, 7), `🔗 Abrir: ${input.url}`]
+      ? [...limitedLines.slice(0, 7), `🔗 ${input.url}`]
       : limitedLines.slice(0, 7);
 
     return truncate(withUrl.join("\n"), maxMessageLength);
@@ -635,7 +682,7 @@ export function buildWhatsAppNotificationText(input: {
         }`
       : null,
     input.recommendedAction
-      ? `Accion: ${truncateLine(input.recommendedAction, 180)}`
+      ? `Acción: ${truncateLine(input.recommendedAction, 180)}`
       : input.description
         ? truncateLine(input.description, 180)
         : null,

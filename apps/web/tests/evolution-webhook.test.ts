@@ -306,6 +306,38 @@ test("webhook outbound documento guarda nombre del archivo", async () => {
   assert.equal(message.text, "[Documento enviado: Cotizacion_Nexiq.pdf]");
 });
 
+test("webhook outbound documento con caption guarda fileName y comentario", async () => {
+  const { tenant, account } = await createTenantAccount("outbound-document-caption");
+  const result = await postEvolutionWebhook(
+    payload({
+      instanceName: account.instanceName!,
+      fromPhone: "+5215599990000",
+      providerMessageId: "outbound-document-caption-message",
+      fromMe: true,
+      message: {
+        documentMessage: {
+          fileName: "Cotizacion_Nexiq.pdf",
+          caption: "Te comparto la propuesta solicitada."
+        }
+      }
+    })
+  );
+  const message = await prisma.message.findFirstOrThrow({
+    where: {
+      tenantId: tenant.id,
+      providerMessageId: "outbound-document-caption-message"
+    }
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(message.direction, MessageDirection.OUTBOUND);
+  assert.equal(message.type, MessageType.DOCUMENT);
+  assert.equal(
+    message.text,
+    "[Documento enviado: Cotizacion_Nexiq.pdf]\nComentario: Te comparto la propuesta solicitada."
+  );
+});
+
 test("webhook ignora respuesta interna solo en modo compartido", async () => {
   process.env.WHATSAPP_ALERTS_ALLOW_SHARED_ACCOUNT = "true";
   const { tenant, account } = await createTenantAccount("internal-reply");

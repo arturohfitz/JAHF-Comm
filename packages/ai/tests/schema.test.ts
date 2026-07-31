@@ -15,6 +15,7 @@ import {
   classifyConversation,
   validateConversationClassification
 } from "../src/index";
+import { normalizeClassificationFacts } from "../src/classifier";
 import type { AiClassificationContext } from "../src/index";
 
 const validClassification = {
@@ -115,6 +116,35 @@ test("PURCHASED no se conserva sin Sale registrada", async () => {
   const result = await classifyConversation(context, { forceMock: true });
 
   assert.notEqual(result.classification.interestStatus, "PURCHASED");
+});
+
+test("PURCHASED sin Sale deja interestSummary null", () => {
+  const context: AiClassificationContext = {
+    tenantId: "tenant-test",
+    contact: {
+      id: "contact-test",
+      name: "Cliente Demo",
+      phoneNumber: "+5215512345678",
+      normalizedPhoneNumber: "+5215512345678",
+      stage: ContactStage.PROSPECT
+    },
+    conversation: {
+      id: "conversation-test",
+      stage: ConversationStage.OPEN
+    },
+    messages: [],
+    sales: [],
+    payments: [],
+    openSupportTickets: []
+  };
+  const result = normalizeClassificationFacts(context, {
+    ...validClassification,
+    interestStatus: "PURCHASED",
+    interestSummary: "Compró una laptop Nexiq."
+  });
+
+  assert.equal(result.interestStatus, "UNKNOWN");
+  assert.equal(result.interestSummary, null);
 });
 
 test("prompt conserva mensajes inbound y outbound con fecha y texto", () => {

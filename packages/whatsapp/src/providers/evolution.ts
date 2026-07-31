@@ -210,25 +210,39 @@ function getAttachmentName(payload: unknown): string | null {
 
 function buildAttachmentText(
   type: NormalizedWhatsAppMessageType,
-  attachmentName: string | null
+  attachmentName: string | null,
+  caption: string | null,
+  fromMe: boolean
 ) {
   if (!attachmentName) {
-    return null;
+    return caption;
   }
 
+  const action = type === "IMAGE"
+    ? fromMe
+      ? "enviada"
+      : "recibida"
+    : fromMe
+      ? "enviado"
+      : "recibido";
+  const comment = caption?.includes(attachmentName)
+    ? caption.replace(attachmentName, "").replace(/\s+/g, " ").trim()
+    : caption;
+  const commentLine = comment ? `\nComentario: ${comment}` : "";
+
   if (type === "DOCUMENT") {
-    return `[Documento enviado: ${attachmentName}]`;
+    return `[Documento ${action}: ${attachmentName}]${commentLine}`;
   }
 
   if (type === "IMAGE") {
-    return `[Imagen enviada: ${attachmentName}]`;
+    return `[Imagen ${action}: ${attachmentName}]${commentLine}`;
   }
 
   if (type === "VIDEO") {
-    return `[Video enviado: ${attachmentName}]`;
+    return `[Video ${action}: ${attachmentName}]${commentLine}`;
   }
 
-  return null;
+  return caption;
 }
 
 function getTimestamp(payload: unknown): Date {
@@ -270,7 +284,17 @@ export function normalizeEvolutionInboundMessage(
 ): NormalizedInboundMessage {
   const type = getMessageType(payload);
   const attachmentName = getAttachmentName(payload);
-  const text = getMessageText(payload) ?? buildAttachmentText(type, attachmentName);
+  const fromMe =
+    firstBoolean(payload, [
+      ["data", "key", "fromMe"],
+      ["key", "fromMe"],
+      ["data", "fromMe"],
+      ["fromMe"]
+    ]) ?? false;
+  const caption = getMessageText(payload);
+  const text = attachmentName
+    ? buildAttachmentText(type, attachmentName, caption, fromMe)
+    : caption;
   const providerMessageId = firstString(payload, [
     ["data", "key", "id"],
     ["key", "id"],
@@ -311,13 +335,7 @@ export function normalizeEvolutionInboundMessage(
 
   return {
     providerMessageId,
-    fromMe:
-      firstBoolean(payload, [
-        ["data", "key", "fromMe"],
-        ["key", "fromMe"],
-        ["data", "fromMe"],
-        ["fromMe"]
-      ]) ?? false,
+    fromMe,
     fromPhone,
     toPhone: toPhone ? normalizePhoneNumber(toPhone) : null,
     instanceName,

@@ -380,7 +380,125 @@ test("metadata compacto incluye cotizacion outbound con nombre y fecha", async (
 
   assert.equal(compactSummary.interestStatus, "QUOTED");
   assert.equal(asset.name, "Cotizacion_Nexiq.pdf");
+  assert.equal(asset.kind, "QUOTATION");
   assert.equal(asset.sentAt, minutesAfter(10).toISOString());
+});
+
+async function createAlertWithOutboundAsset(input: {
+  label: string;
+  fileName: string;
+  text?: string;
+  saleStatus?: (typeof SaleStatus)[keyof typeof SaleStatus];
+}) {
+  const base = await createReturnMemory({ label: input.label, minutes: 8 * 24 * 60 });
+
+  if (input.saleStatus) {
+    await prisma.sale.create({
+      data: {
+        tenantId: base.tenant.id,
+        contactId: base.contact.id,
+        conversationId: base.conversation.id,
+        product: "Venta cancelada",
+        amountCents: 10000,
+        soldAt: minutesAfter(12),
+        status: input.saleStatus
+      }
+    });
+  }
+
+  await prisma.message.create({
+    data: {
+      tenantId: base.tenant.id,
+      conversationId: base.conversation.id,
+      contactId: base.contact.id,
+      whatsappAccountId: base.account.id,
+      direction: MessageDirection.OUTBOUND,
+      type: MessageType.DOCUMENT,
+      text: input.text ?? `[Documento enviado: ${input.fileName}]`,
+      providerMessageId: `asset-${base.trigger.id}`,
+      sentAt: minutesAfter(10)
+    }
+  });
+  await evaluateAndCreateCustomerAlerts({
+    tenantId: base.tenant.id,
+    contactId: base.contact.id,
+    conversationId: base.conversation.id,
+    triggerMessageId: base.trigger.id
+  });
+  const notification = await prisma.notification.findFirstOrThrow({
+    where: {
+      tenantId: base.tenant.id,
+      metadata: { path: ["source"], equals: customerAlertSource }
+    }
+  });
+  const metadata = notification.metadata as Record<string, unknown>;
+
+  return metadata.compactSummary as Record<string, unknown>;
+}
+
+test("Manual.pdf no fuerza QUOTED", async () => {
+  const compactSummary = await createAlertWithOutboundAsset({
+    label: "manual-pdf",
+    fileName: "Manual_Nexiq.pdf"
+  });
+  const asset = compactSummary.lastSharedAsset as Record<string, unknown>;
+
+  assert.notEqual(compactSummary.interestStatus, "QUOTED");
+  assert.equal(asset.name, "Manual_Nexiq.pdf");
+  assert.equal(asset.kind, "DOCUMENT");
+});
+
+test("Catalogo.pdf no fuerza QUOTED", async () => {
+  const compactSummary = await createAlertWithOutboundAsset({
+    label: "catalog-pdf",
+    fileName: "Catalogo_Nexiq.pdf"
+  });
+  const asset = compactSummary.lastSharedAsset as Record<string, unknown>;
+
+  assert.notEqual(compactSummary.interestStatus, "QUOTED");
+  assert.equal(asset.name, "Catalogo_Nexiq.pdf");
+  assert.equal(asset.kind, "CATALOG");
+});
+
+test("Cotizacion_Nexiq.pdf si se identifica como cotizacion", async () => {
+  const compactSummary = await createAlertWithOutboundAsset({
+    label: "quote-pdf",
+    fileName: "Cotizacion_Nexiq.pdf"
+  });
+  const asset = compactSummary.lastSharedAsset as Record<string, unknown>;
+
+  assert.equal(compactSummary.interestStatus, "QUOTED");
+  assert.equal(asset.kind, "QUOTATION");
+});
+
+test("archivo generico se muestra sin cambiar estado a QUOTED", async () => {
+  const compactSummary = await createAlertWithOutboundAsset({
+    label: "generic-file",
+    fileName: "Ficha_motor.pdf"
+  });
+  const asset = compactSummary.lastSharedAsset as Record<string, unknown>;
+
+  assert.equal(asset.name, "Ficha_motor.pdf");
+  assert.equal(asset.kind, "DOCUMENT");
+  assert.notEqual(compactSummary.interestStatus, "QUOTED");
+});
+
+test("CANCELLED y REFUNDED no afirman compra", async () => {
+  const cancelled = await createAlertWithOutboundAsset({
+    label: "cancelled-sale",
+    fileName: "Manual_Nexiq.pdf",
+    saleStatus: SaleStatus.CANCELLED
+  });
+  const refunded = await createAlertWithOutboundAsset({
+    label: "refunded-sale",
+    fileName: "Manual_Nexiq.pdf",
+    saleStatus: SaleStatus.REFUNDED
+  });
+
+  assert.equal(cancelled.lastSale, null);
+  assert.notEqual(cancelled.interestStatus, "PURCHASED");
+  assert.equal(refunded.lastSale, null);
+  assert.notEqual(refunded.interestStatus, "PURCHASED");
 });
 
 test("venta registrada tiene prioridad sobre interestStatus de IA", async () => {

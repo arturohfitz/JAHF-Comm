@@ -30,7 +30,7 @@ const customerAlertVersion = 1;
 const defaultCooldownHours = 4;
 const defaultNegativeConfidence = 0.7;
 const validPurchaseSaleStatuses = [SaleStatus.PAID, SaleStatus.PENDING];
-const assetPattern = /cotiz|presupuesto|propuesta|pdf|catalogo|catálogo/i;
+const quotationPattern = /cotiz|presupuesto|propuesta/i;
 
 export type CustomerAlertRule =
   | "CUSTOMER_OPERATIONAL_RETURN"
@@ -44,6 +44,7 @@ export type CustomerAlertRule =
   | "OPEN_SUPPORT_TICKET_AND_CUSTOMER_RETURNED";
 
 type AlertSeverity = "medium" | "high" | "urgent";
+type SharedAssetKind = "QUOTATION" | "CATALOG" | "DOCUMENT" | "IMAGE" | "VIDEO";
 
 type TriggerClassification = {
   id: string;
@@ -66,6 +67,7 @@ type CompactSummary = {
   lastSharedAsset: {
     name: string;
     type: string;
+    kind: SharedAssetKind;
     sentAt: string;
   } | null;
   lastSale: {
@@ -455,26 +457,96 @@ function cleanAssetName(text: string | null) {
     return null;
   }
 
-  const bracketMatch = /^\[[^:]+:\s*(.+)]$/.exec(compacted);
+  const bracketMatch = /^\[[^:]+:\s*([^\]\n]+)]/.exec(compacted);
   const value = bracketMatch?.[1] ?? compacted;
 
   return value.length <= 120 ? value : `${value.slice(0, 117)}...`;
 }
 
+function isFileMessage(type: MessageType) {
+  return (
+    type === MessageType.DOCUMENT ||
+    type === MessageType.IMAGE ||
+    type === MessageType.VIDEO
+  );
+}
+
+function getSharedAssetKind(input: {
+  name: string;
+  type: MessageType;
+  text: string;
+}): SharedAssetKind {
+  const searchable = `${input.name} ${input.text}`;
+
+  if (quotationPattern.test(searchable)) {
+    return "QUOTATION";
+  }
+
+  if (/catalogo|catálogo/i.test(searchable)) {
+    return "CATALOG";
+  }
+
+  if (input.type === MessageType.IMAGE) {
+    return "IMAGE";
+  }
+
+  if (input.type === MessageType.VIDEO) {
+    return "VIDEO";
+  }
+
+  return "DOCUMENT";
+}
+
 function buildInterestStatus(input: {
   classification: TriggerClassification | null;
   lastSale: { product: string; status: SaleStatus; soldAt: Date } | null;
-  lastSharedAsset: { name: string; type: MessageType; sentAt: Date } | null;
+  lastSharedAsset: {
+    name: string;
+    type: MessageType;
+    kind: SharedAssetKind;
+    sentAt: Date;
+  } | null;
 }) {
   if (input.lastSale) {
     return "PURCHASED";
   }
 
-  if (input.lastSharedAsset) {
+  if (input.lastSharedAsset?.kind === "QUOTATION") {
     return "QUOTED";
   }
 
-  return readRawString(input.classification, "interestStatus", 40) ?? "UNKNOWN";
+  const aiStatus = readRawString(input.classification, "interestStatus", 40);
+
+  if (aiStatus === "PURCHASED") {
+    return "UNKNOWN";
+  }
+
+  if (aiStatus === "QUOTED") {
+    return "UNKNOWN";
+  }
+
+  return aiStatus ?? "UNKNOWN";
+}
+
+function readSafeInterestSummary(
+  classification: TriggerClassification | null,
+  interestStatus: string
+) {
+  if (interestStatus === "UNKNOWN") {
+    const aiStatus = readRawString(classification, "interestStatus", 40);
+
+    if (aiStatus === "PURCHASED") {
+      return null;
+    }
+  }
+
+  const summary = readRawString(classification, "interestSummary", 140);
+
+  if (summary && /(compr[oó]|adquiri[oó]|adquirió|compra registrada)/i.test(summary)) {
+    return null;
+  }
+
+  return summary;
 }
 
 async function buildCompactSummary(input: {
@@ -530,9 +602,21 @@ async function buildCompactSummary(input: {
         type: MessageType;
         sentAt: Date;
         text: string;
-      } => Boolean(message.name) && assetPattern.test(message.text)
+      } => Boolean(message.name) && isFileMessage(message.type)
     )
+    .map((message) => ({
+      ...message,
+      kind: getSharedAssetKind(message)
+    }))
     .sort((left, right) => {
+      if (left.kind === "QUOTATION" && right.kind !== "QUOTATION") {
+        return -1;
+      }
+
+      if (left.kind !== "QUOTATION" && right.kind === "QUOTATION") {
+        return 1;
+      }
+
       if (left.type === MessageType.DOCUMENT && right.type !== MessageType.DOCUMENT) {
         return -1;
       }
@@ -561,9 +645,11 @@ async function buildCompactSummary(input: {
     interestStatus,
     interestSummary: lastSale
       ? null
-      : lastSharedAsset
+      : lastSharedAsset?.kind === "QUOTATION"
         ? "Cotizacion enviada; compra no registrada."
-        : readRawString(input.classification, "interestSummary", 140),
+        : interestStatus === "PURCHASED"
+          ? null
+          : readSafeInterestSummary(input.classification, interestStatus),
     shortRecommendedAction:
       readRawString(input.classification, "shortRecommendedAction", 160) ??
       input.classification?.recommendedAction ??
@@ -572,6 +658,7 @@ async function buildCompactSummary(input: {
       ? {
           name: lastSharedAsset.name,
           type: lastSharedAsset.type,
+          kind: lastSharedAsset.kind,
           sentAt: lastSharedAsset.sentAt.toISOString()
         }
       : null,

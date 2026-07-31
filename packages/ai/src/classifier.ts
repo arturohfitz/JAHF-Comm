@@ -57,7 +57,7 @@ function latestMessage(context: AiClassificationContext, direction: "INBOUND" | 
     .find((message) => message.direction === direction);
 }
 
-function normalizeClassificationFacts(
+export function normalizeClassificationFacts(
   context: AiClassificationContext,
   classification: ConversationClassification
 ): ConversationClassification {
@@ -65,10 +65,7 @@ function normalizeClassificationFacts(
     return {
       ...classification,
       interestStatus: "UNKNOWN",
-      interestSummary:
-        classification.interestSummary === "Compra registrada"
-          ? null
-          : classification.interestSummary
+      interestSummary: null
     };
   }
 
@@ -97,7 +94,7 @@ function mockClassification(
   const hasQuotedAsset = context.messages.some(
     (message) =>
       message.direction === "OUTBOUND" &&
-      /cotiz|presupuesto|propuesta|pdf|catalogo|catálogo/i.test(message.text ?? "")
+      /cotiz|presupuesto|propuesta/i.test(message.text ?? "")
   );
   const intent = paymentConcern
     ? AIIntent.PAYMENT
