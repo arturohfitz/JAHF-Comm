@@ -188,10 +188,47 @@ function getMessageText(payload: unknown): string | null {
     ["message", "extendedTextMessage", "text"],
     ["message", "imageMessage", "caption"],
     ["message", "videoMessage", "caption"],
+    ["message", "documentMessage", "caption"],
     ["text"],
     ["body"],
     ["message"]
   ]);
+}
+
+function getAttachmentName(payload: unknown): string | null {
+  return firstString(payload, [
+    ["data", "message", "documentMessage", "fileName"],
+    ["message", "documentMessage", "fileName"],
+    ["data", "message", "imageMessage", "fileName"],
+    ["message", "imageMessage", "fileName"],
+    ["data", "message", "videoMessage", "fileName"],
+    ["message", "videoMessage", "fileName"],
+    ["data", "fileName"],
+    ["fileName"]
+  ]);
+}
+
+function buildAttachmentText(
+  type: NormalizedWhatsAppMessageType,
+  attachmentName: string | null
+) {
+  if (!attachmentName) {
+    return null;
+  }
+
+  if (type === "DOCUMENT") {
+    return `[Documento enviado: ${attachmentName}]`;
+  }
+
+  if (type === "IMAGE") {
+    return `[Imagen enviada: ${attachmentName}]`;
+  }
+
+  if (type === "VIDEO") {
+    return `[Video enviado: ${attachmentName}]`;
+  }
+
+  return null;
 }
 
 function getTimestamp(payload: unknown): Date {
@@ -231,6 +268,9 @@ function getTimestamp(payload: unknown): Date {
 export function normalizeEvolutionInboundMessage(
   payload: unknown
 ): NormalizedInboundMessage {
+  const type = getMessageType(payload);
+  const attachmentName = getAttachmentName(payload);
+  const text = getMessageText(payload) ?? buildAttachmentText(type, attachmentName);
   const providerMessageId = firstString(payload, [
     ["data", "key", "id"],
     ["key", "id"],
@@ -289,8 +329,9 @@ export function normalizeEvolutionInboundMessage(
       ["contact", "name"],
       ["name"]
     ]),
-    text: getMessageText(payload),
-    type: getMessageType(payload),
+    text,
+    attachmentName,
+    type,
     timestamp: getTimestamp(payload),
     rawPayload: payload
   };

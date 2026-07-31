@@ -7,6 +7,7 @@ export { buildClassificationUserPrompt, classificationSystemPrompt } from "./pro
 export { DEFAULT_OPENAI_MODEL } from "./types";
 export type {
   AiClassificationContext,
+  ClassificationInterestStatus,
   ClassificationMode,
   ClassificationResult,
   ClassificationSentiment,

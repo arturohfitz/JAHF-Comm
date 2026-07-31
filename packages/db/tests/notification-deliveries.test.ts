@@ -460,6 +460,133 @@ test("message builder enmascara telefono, limita longitud y no expone texto raw"
   assert.equal(text.length <= 1800, true);
 });
 
+function compactSummary(input: Partial<{
+  previousInteractionAt: string | null;
+  inactivityMinutes: number | null;
+  previousTopic: string | null;
+  currentRequest: string | null;
+  interestStatus: string;
+  interestSummary: string | null;
+  shortRecommendedAction: string | null;
+  lastSharedAsset: { name: string; type: string; sentAt: string } | null;
+  lastSale: { product: string; status: string; soldAt: string } | null;
+  attention: { urgent: boolean; negative: boolean };
+}> = {}) {
+  return {
+    previousInteractionAt: Object.hasOwn(input, "previousInteractionAt")
+      ? input.previousInteractionAt!
+      : "2026-07-22T16:30:00.000Z",
+    inactivityMinutes: Object.hasOwn(input, "inactivityMinutes")
+      ? input.inactivityMinutes!
+      : 8 * 24 * 60,
+    previousTopic: Object.hasOwn(input, "previousTopic")
+      ? input.previousTopic!
+      : "Pregunto por laptop con Nexiq y programas Cummins.",
+    currentRequest: Object.hasOwn(input, "currentRequest")
+      ? input.currentRequest!
+      : "Quiere continuar con la compra en linea.",
+    interestStatus: input.interestStatus ?? "QUOTED",
+    interestSummary: Object.hasOwn(input, "interestSummary")
+      ? input.interestSummary!
+      : "Cotizacion enviada; compra no registrada.",
+    shortRecommendedAction: Object.hasOwn(input, "shortRecommendedAction")
+      ? input.shortRecommendedAction!
+      : "Confirmar modelo y forma de pago.",
+    lastSharedAsset:
+      input.lastSharedAsset === undefined
+        ? {
+            name: "Cotizacion_Nexiq.pdf",
+            type: "DOCUMENT",
+            sentAt: "2026-07-22T17:00:00.000Z"
+          }
+        : input.lastSharedAsset,
+    lastSale: input.lastSale ?? null,
+    attention: input.attention ?? { urgent: false, negative: false }
+  };
+}
+
+function compactMessage(input: { compact?: unknown; url?: string | null } = {}) {
+  return buildWhatsAppNotificationText({
+    title: "Cliente reactivado: Pedro Ramirez",
+    description: "Resumen: texto largo que no debe mostrarse. Reglas: internas.",
+    contactName: "Pedro Ramirez",
+    contactPhone: "+5215512341838",
+    rules: ["CUSTOMER_COMMERCIAL_REACTIVATION"],
+    summary: "Memoria: no debe mostrarse",
+    recommendedAction: "Accion larga antigua",
+    url: input.url ?? "https://comms.jahfconnect.com/inbox?conversationId=abc",
+    compactSummary: input.compact ?? compactSummary(),
+    timezone: "America/Mexico_City"
+  });
+}
+
+test("formato compacto no contiene etiquetas largas ni sentimiento neutral", () => {
+  const text = compactMessage();
+
+  assert.equal(text.includes("Resumen:"), false);
+  assert.equal(text.includes("Memoria:"), false);
+  assert.equal(text.includes("Reglas:"), false);
+  assert.equal(text.includes("Neutral"), false);
+  assert.equal(text.includes("****1838"), true);
+});
+
+test("formato compacto muestra negativo solo cuando aplica", () => {
+  const neutral = compactMessage({
+    compact: compactSummary({ attention: { urgent: false, negative: false } })
+  });
+  const negative = compactMessage({
+    compact: compactSummary({ attention: { urgent: false, negative: true } })
+  });
+
+  assert.equal(neutral.includes("Cliente molesto"), false);
+  assert.equal(negative.includes("Cliente molesto"), true);
+});
+
+test("formato compacto muestra urgencia solo cuando aplica", () => {
+  const neutral = compactMessage({
+    compact: compactSummary({ attention: { urgent: false, negative: false } })
+  });
+  const urgent = compactMessage({
+    compact: compactSummary({ attention: { urgent: true, negative: false } })
+  });
+
+  assert.equal(neutral.includes("Solicitud urgente"), false);
+  assert.equal(urgent.includes("Solicitud urgente"), true);
+});
+
+test("formato compacto omite lineas vacias e incluye enlace", () => {
+  const text = compactMessage({
+    compact: compactSummary({
+      previousTopic: null,
+      currentRequest: null,
+      lastSharedAsset: null,
+      interestSummary: null,
+      shortRecommendedAction: null
+    })
+  });
+
+  assert.equal(text.includes("Antes:"), false);
+  assert.equal(text.includes("Ahora:"), false);
+  assert.equal(text.includes("Enviado:"), false);
+  assert.match(text, /Abrir: https:\/\/comms\.jahfconnect\.com/);
+});
+
+test("formato compacto queda dentro del limite definido", () => {
+  const text = compactMessage({
+    compact: compactSummary({
+      previousTopic: "x".repeat(600),
+      currentRequest: "y".repeat(600),
+      shortRecommendedAction: "z".repeat(600)
+    })
+  });
+  const withoutUrl = text
+    .split("\n")
+    .filter((line) => !line.includes("Abrir:"))
+    .join("\n");
+
+  assert.equal(withoutUrl.length <= 900, true);
+});
+
 test("delivery se marca SKIPPED cuando tenant, usuario o preferencia no permiten WhatsApp", async () => {
   const disabledTenant = await createBase("skip-tenant");
   await upsertNotificationPreference({

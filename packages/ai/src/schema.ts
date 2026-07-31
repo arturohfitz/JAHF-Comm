@@ -6,6 +6,7 @@ import {
 } from "@jahf-comm/db";
 
 import type {
+  ClassificationInterestStatus,
   ClassificationSentiment,
   ConversationClassification
 } from "./types";
@@ -15,6 +16,14 @@ const sentiments: ClassificationSentiment[] = [
   "NEUTRAL",
   "NEGATIVE",
   "ANGRY",
+  "UNKNOWN"
+];
+const interestStatuses: ClassificationInterestStatus[] = [
+  "INTERESTED",
+  "QUOTED",
+  "PURCHASED",
+  "NOT_INTERESTED",
+  "FOLLOW_UP",
   "UNKNOWN"
 ];
 
@@ -34,6 +43,11 @@ export const conversationClassificationJsonSchema = {
     "detectedSupportConcern",
     "detectedConfigurationConcern",
     "sentiment",
+    "previousTopic",
+    "currentRequest",
+    "interestStatus",
+    "interestSummary",
+    "shortRecommendedAction",
     "shouldCreateNotification",
     "notificationTitle",
     "notificationDescription"
@@ -54,6 +68,15 @@ export const conversationClassificationJsonSchema = {
     detectedSupportConcern: { type: "boolean" },
     detectedConfigurationConcern: { type: "boolean" },
     sentiment: { type: "string", enum: sentiments },
+    previousTopic: {
+      anyOf: [{ type: "string", minLength: 1, maxLength: 160 }, { type: "null" }]
+    },
+    currentRequest: { type: "string", minLength: 1, maxLength: 160 },
+    interestStatus: { type: "string", enum: interestStatuses },
+    interestSummary: {
+      anyOf: [{ type: "string", minLength: 1, maxLength: 140 }, { type: "null" }]
+    },
+    shortRecommendedAction: { type: "string", minLength: 1, maxLength: 160 },
     shouldCreateNotification: { type: "boolean" },
     notificationTitle: {
       anyOf: [{ type: "string", minLength: 1, maxLength: 120 }, { type: "null" }]
@@ -69,6 +92,26 @@ function isEnumValue<T extends string>(
   values: readonly T[]
 ): value is T {
   return typeof value === "string" && values.includes(value as T);
+}
+
+function validateNullableStringLength(
+  value: unknown,
+  fieldName: string,
+  maxLength: number
+) {
+  if (value === null) {
+    return;
+  }
+
+  if (typeof value !== "string" || value.length === 0 || value.length > maxLength) {
+    throw new Error(`AI classification ${fieldName} is invalid.`);
+  }
+}
+
+function validateStringLength(value: unknown, fieldName: string, maxLength: number) {
+  if (typeof value !== "string" || value.length === 0 || value.length > maxLength) {
+    throw new Error(`AI classification ${fieldName} is invalid.`);
+  }
 }
 
 export function validateConversationClassification(
@@ -140,6 +183,20 @@ export function validateConversationClassification(
   if (!isEnumValue(record.sentiment, sentiments)) {
     throw new Error("AI classification has invalid sentiment.");
   }
+
+  validateNullableStringLength(record.previousTopic, "previousTopic", 160);
+  validateStringLength(record.currentRequest, "currentRequest", 160);
+
+  if (!isEnumValue(record.interestStatus, interestStatuses)) {
+    throw new Error("AI classification has invalid interest status.");
+  }
+
+  validateNullableStringLength(record.interestSummary, "interestSummary", 140);
+  validateStringLength(
+    record.shortRecommendedAction,
+    "shortRecommendedAction",
+    160
+  );
 
   if (typeof record.shouldCreateNotification !== "boolean") {
     throw new Error("AI classification shouldCreateNotification must be boolean.");

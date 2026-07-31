@@ -39,3 +39,50 @@ test("Evolution usa fromMe=false cuando no existe", () => {
 
   assert.equal(normalized.fromMe, false);
 });
+
+test("Evolution extrae nombre de documento y texto factual", () => {
+  const normalized = normalizeEvolutionInboundMessage({
+    instance: "jahf-services",
+    data: {
+      key: {
+        id: "document-id",
+        remoteJid: "5215512345678@s.whatsapp.net",
+        fromMe: true
+      },
+      message: {
+        documentMessage: {
+          fileName: "Cotizacion_Nexiq.pdf"
+        }
+      },
+      messageTimestamp: 1760000000
+    }
+  });
+
+  assert.equal(normalized.type, "DOCUMENT");
+  assert.equal(normalized.attachmentName, "Cotizacion_Nexiq.pdf");
+  assert.equal(normalized.text, "[Documento enviado: Cotizacion_Nexiq.pdf]");
+});
+
+test("Evolution conserva caption sobre fallback de imagen", () => {
+  const normalized = normalizeEvolutionInboundMessage({
+    instance: "jahf-services",
+    data: {
+      key: {
+        id: "image-id",
+        remoteJid: "5215512345678@s.whatsapp.net",
+        fromMe: true
+      },
+      message: {
+        imageMessage: {
+          fileName: "foto.jpg",
+          caption: "Foto de evidencia"
+        }
+      },
+      messageTimestamp: 1760000000
+    }
+  });
+
+  assert.equal(normalized.type, "IMAGE");
+  assert.equal(normalized.attachmentName, "foto.jpg");
+  assert.equal(normalized.text, "Foto de evidencia");
+});

@@ -16,6 +16,7 @@ export type NormalizedInboundMessage = {
   providerInstanceId: string | null;
   contactName: string | null;
   text: string | null;
+  attachmentName: string | null;
   type: NormalizedWhatsAppMessageType;
   timestamp: Date;
   rawPayload: unknown;

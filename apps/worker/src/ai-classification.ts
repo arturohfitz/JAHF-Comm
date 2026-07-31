@@ -313,20 +313,6 @@ export async function processAiClassificationJob(
       }
     });
 
-    if (classification.shouldCreateNotification) {
-      await tx.notification.create({
-        data: {
-          tenantId: payload.tenantId,
-          userId: conversation.assignedUserId,
-          type: NotificationType.AI_SUGGESTION,
-          title: classification.notificationTitle ?? "Sugerencia IA",
-          description:
-            classification.notificationDescription ??
-            classification.recommendedAction
-        }
-      });
-    }
-
     return {
       status: "created" as const,
       id: savedClassification.id
@@ -350,7 +336,21 @@ export async function processAiClassificationJob(
     tenantId: payload.tenantId,
     aiClassificationId: saved.id
   });
-  await evaluateAlertsForPayload(payload);
+  const alertResult = await evaluateAlertsForPayload(payload);
+
+  if (classification.shouldCreateNotification && alertResult.created === 0) {
+    await prisma.notification.create({
+      data: {
+        tenantId: payload.tenantId,
+        userId: conversation.assignedUserId,
+        type: NotificationType.AI_SUGGESTION,
+        title: classification.notificationTitle ?? "Sugerencia IA",
+        description:
+          classification.notificationDescription ??
+          classification.recommendedAction
+      }
+    });
+  }
 
   return {
     status: "created",

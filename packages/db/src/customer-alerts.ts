@@ -2,10 +2,13 @@ import {
   AIIntent,
   CustomerReturnType,
   MembershipRole,
+  MessageDirection,
+  MessageType,
   NotificationSeverity,
   NotificationType,
   Prisma,
   prisma,
+  SaleStatus,
   Urgency
 } from "@jahf-comm/db";
 import {
@@ -26,6 +29,8 @@ export const customerAlertSource = "CUSTOMER_ALERT_ENGINE";
 const customerAlertVersion = 1;
 const defaultCooldownHours = 4;
 const defaultNegativeConfidence = 0.7;
+const validPurchaseSaleStatuses = [SaleStatus.PAID, SaleStatus.PENDING];
+const assetPattern = /cotiz|presupuesto|propuesta|pdf|catalogo|catálogo/i;
 
 export type CustomerAlertRule =
   | "CUSTOMER_OPERATIONAL_RETURN"
@@ -48,6 +53,30 @@ type TriggerClassification = {
   confidence: number;
   recommendedAction: string | null;
   rawResult: Prisma.JsonValue | null;
+};
+
+type CompactSummary = {
+  previousInteractionAt: string | null;
+  inactivityMinutes: number | null;
+  previousTopic: string | null;
+  currentRequest: string | null;
+  interestStatus: string;
+  interestSummary: string | null;
+  shortRecommendedAction: string | null;
+  lastSharedAsset: {
+    name: string;
+    type: string;
+    sentAt: string;
+  } | null;
+  lastSale: {
+    product: string;
+    status: string;
+    soldAt: string;
+  } | null;
+  attention: {
+    urgent: boolean;
+    negative: boolean;
+  };
 };
 
 export type EvaluateCustomerAlertRulesInput = {
@@ -112,6 +141,27 @@ function readRequiresHuman(classification?: TriggerClassification | null) {
   const value = raw?.requiresHuman;
 
   return typeof value === "boolean" ? value : null;
+}
+
+function readRawString(
+  classification: TriggerClassification | null,
+  key: string,
+  maxLength: number
+) {
+  const raw = readRawRecord(classification?.rawResult);
+  const value = raw?.[key];
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.replace(/\s+/g, " ").trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.length <= maxLength ? trimmed : `${trimmed.slice(0, maxLength - 3)}...`;
 }
 
 function isSupportIntent(intent: AIIntent | null | undefined) {
@@ -190,6 +240,10 @@ export function evaluateCustomerAlertRules(
     memory.processing.lastProcessedMessageId &&
     memory.processing.lastProcessedMessageId !== input.triggerMessage.id
   ) {
+    return null;
+  }
+
+  if (!memory.returnStatus.isReturningCustomer || !isReturning(memory)) {
     return null;
   }
 
@@ -394,6 +448,147 @@ function createDeduplicationKey(input: {
   return `customer-alert:v1:${input.tenantId}:${input.contactId}:${input.triggerMessageId}:${input.userId}`;
 }
 
+function cleanAssetName(text: string | null) {
+  const compacted = text?.replace(/\s+/g, " ").trim();
+
+  if (!compacted) {
+    return null;
+  }
+
+  const bracketMatch = /^\[[^:]+:\s*(.+)]$/.exec(compacted);
+  const value = bracketMatch?.[1] ?? compacted;
+
+  return value.length <= 120 ? value : `${value.slice(0, 117)}...`;
+}
+
+function buildInterestStatus(input: {
+  classification: TriggerClassification | null;
+  lastSale: { product: string; status: SaleStatus; soldAt: Date } | null;
+  lastSharedAsset: { name: string; type: MessageType; sentAt: Date } | null;
+}) {
+  if (input.lastSale) {
+    return "PURCHASED";
+  }
+
+  if (input.lastSharedAsset) {
+    return "QUOTED";
+  }
+
+  return readRawString(input.classification, "interestStatus", 40) ?? "UNKNOWN";
+}
+
+async function buildCompactSummary(input: {
+  tenantId: string;
+  contactId: string;
+  memory: CustomerMemoryView;
+  classification: TriggerClassification | null;
+}): Promise<CompactSummary> {
+  const [lastSale, outboundMessages] = await Promise.all([
+    prisma.sale.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        contactId: input.contactId,
+        status: {
+          in: validPurchaseSaleStatuses
+        }
+      },
+      orderBy: [{ soldAt: "desc" }, { createdAt: "desc" }],
+      select: {
+        product: true,
+        status: true,
+        soldAt: true
+      }
+    }),
+    prisma.message.findMany({
+      where: {
+        tenantId: input.tenantId,
+        contactId: input.contactId,
+        direction: MessageDirection.OUTBOUND,
+        text: {
+          not: null
+        }
+      },
+      orderBy: [{ sentAt: "desc" }, { createdAt: "desc" }],
+      take: 20,
+      select: {
+        type: true,
+        text: true,
+        sentAt: true
+      }
+    })
+  ]);
+  const sharedAssetCandidates = outboundMessages
+    .map((message) => ({
+      name: cleanAssetName(message.text),
+      type: message.type,
+      sentAt: message.sentAt,
+      text: message.text ?? ""
+    }))
+    .filter(
+      (message): message is {
+        name: string;
+        type: MessageType;
+        sentAt: Date;
+        text: string;
+      } => Boolean(message.name) && assetPattern.test(message.text)
+    )
+    .sort((left, right) => {
+      if (left.type === MessageType.DOCUMENT && right.type !== MessageType.DOCUMENT) {
+        return -1;
+      }
+
+      if (left.type !== MessageType.DOCUMENT && right.type === MessageType.DOCUMENT) {
+        return 1;
+      }
+
+      return right.sentAt.getTime() - left.sentAt.getTime();
+    });
+  const lastSharedAsset = sharedAssetCandidates[0] ?? null;
+  const sentiment = readSentiment(input.classification);
+  const urgency = input.classification?.urgency;
+  const interestStatus = buildInterestStatus({
+    classification: input.classification,
+    lastSale,
+    lastSharedAsset
+  });
+
+  return {
+    previousInteractionAt:
+      input.memory.history.previousInteractionAt?.toISOString() ?? null,
+    inactivityMinutes: input.memory.returnStatus.inactivityMinutes,
+    previousTopic: readRawString(input.classification, "previousTopic", 160),
+    currentRequest: readRawString(input.classification, "currentRequest", 160),
+    interestStatus,
+    interestSummary: lastSale
+      ? null
+      : lastSharedAsset
+        ? "Cotizacion enviada; compra no registrada."
+        : readRawString(input.classification, "interestSummary", 140),
+    shortRecommendedAction:
+      readRawString(input.classification, "shortRecommendedAction", 160) ??
+      input.classification?.recommendedAction ??
+      input.memory.classification.recommendedNextAction,
+    lastSharedAsset: lastSharedAsset
+      ? {
+          name: lastSharedAsset.name,
+          type: lastSharedAsset.type,
+          sentAt: lastSharedAsset.sentAt.toISOString()
+        }
+      : null,
+    lastSale: lastSale
+      ? {
+          product: lastSale.product,
+          status: lastSale.status,
+          soldAt: lastSale.soldAt.toISOString()
+        }
+      : null,
+    attention: {
+      urgent: urgency === Urgency.HIGH || urgency === Urgency.URGENT,
+      negative: sentiment === "NEGATIVE" || sentiment === "ANGRY"
+    }
+  };
+}
+
 async function isInCooldown(input: {
   tenantId: string;
   contactId: string;
@@ -524,6 +719,12 @@ export async function createCustomerAlerts(input: CreateCustomerAlertsInput) {
       }
     })
   ]);
+  const compactSummary = await buildCompactSummary({
+    tenantId: input.tenantId,
+    contactId: input.contactId,
+    memory,
+    classification
+  });
   let created = 0;
 
   for (const userId of recipients) {
@@ -563,6 +764,7 @@ export async function createCustomerAlerts(input: CreateCustomerAlertsInput) {
       intent: classification?.detectedIntent ?? null,
       priority: classification?.urgency ?? null,
       sentiment: readSentiment(classification),
+      compactSummary,
       href: `/inbox?conversationId=${input.conversationId}`
     } satisfies Prisma.InputJsonObject;
 
