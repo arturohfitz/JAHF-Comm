@@ -23,9 +23,9 @@ type WhatsAppAccountSummary = {
 };
 
 export default async function SettingsPage() {
-  const { tenant, membership } = await requireAuth();
+  const { tenant, effectiveRole } = await requireAuth();
 
-  if (!canManageSettings(membership.role)) {
+  if (!canManageSettings(effectiveRole)) {
     return (
       <>
         <PageHeader

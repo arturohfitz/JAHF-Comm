@@ -48,9 +48,12 @@
     "test:customer-memory:view": "tsx --test tests/customer-memory-view.test.ts",
     "test:customer-alerts": "tsx --test tests/customer-alerts.test.ts",
     "test:notification-deliveries": "tsx --test tests/notification-deliveries.test.ts",
+    "test:platform-security": "tsx --test tests/platform-security.test.ts",
     "notification-deliveries:enqueue": "tsx scripts/enqueue-pending-notification-deliveries.ts",
     "notification-deliveries:mark-stale": "tsx scripts/mark-stale-whatsapp-deliveries-unknown.ts",
-    "production:seed-admin": "tsx scripts/create-admin.ts"
+    "production:seed-admin": "tsx scripts/create-admin.ts",
+    "production:create-platform-admin": "tsx scripts/create-platform-admin.ts",
+    "production:check-evolution-identities": "tsx scripts/check-evolution-identity-uniqueness.ts"
   },
   "dependencies": {
     "@jahf-comm/shared": "workspace:*",

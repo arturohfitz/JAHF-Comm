@@ -24,7 +24,7 @@ type NotificationSummary = {
 };
 
 export async function GET() {
-  const { tenant, user, membership } = await requireAuth();
+  const { tenant, user } = await requireAuth();
   const scope = getNotificationQueryScope({
     tenantId: tenant.id,
     userId: user.id
@@ -51,10 +51,6 @@ export async function GET() {
       }
     })
   ]);
-
-  if (!membership.id) {
-    return NextResponse.json({ unreadCount: 0, notifications: [] });
-  }
 
   return NextResponse.json({
     unreadCount,

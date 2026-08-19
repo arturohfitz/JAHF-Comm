@@ -13,6 +13,11 @@ enum MembershipRole {
   VIEWER
 }
 
+enum PlatformRole {
+  USER
+  SUPER_ADMIN
+}
+
 enum WhatsAppProvider {
   EVOLUTION
   META_CLOUD
@@ -185,9 +190,11 @@ model Tenant {
   id                      String                      @id @default(cuid())
   name                    String
   slug                    String                      @unique
+  onboardingCompletedAt   DateTime?
   createdAt               DateTime                    @default(now())
   updatedAt               DateTime                    @updatedAt
   memberships             Membership[]
+  activeSessions          AuthSession[]               @relation("AuthSessionActiveTenant")
   whatsappAccounts        WhatsAppAccount[]
   contacts                Contact[]
   conversations           Conversation[]
@@ -206,6 +213,7 @@ model Tenant {
   customerMemories        CustomerMemory[]
 
   @@index([createdAt])
+  @@index([onboardingCompletedAt])
 }
 
 model User {
@@ -213,6 +221,8 @@ model User {
   email                   String                   @unique
   name                    String?
   passwordHash            String?
+  platformRole            PlatformRole             @default(USER)
+  mustChangePassword      Boolean                  @default(false)
   emailVerifiedAt         DateTime?
   lastLoginAt             DateTime?
   createdAt               DateTime                 @default(now())
@@ -228,20 +238,24 @@ model User {
   auditLogs               AuditLog[]
 
   @@index([email])
+  @@index([platformRole])
   @@index([createdAt])
   @@map("users")
 }
 
 model AuthSession {
-  id        String   @id @default(cuid())
-  userId    String
-  tokenHash String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  userId         String
+  activeTenantId String?
+  tokenHash      String   @unique
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeTenant   Tenant?  @relation("AuthSessionActiveTenant", fields: [activeTenantId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([activeTenantId])
   @@index([expiresAt])
 }
 
@@ -286,6 +300,9 @@ model WhatsAppAccount {
   @@unique([tenantId, normalizedPhoneNumber])
   @@unique([tenantId, provider, providerInstanceId])
   @@unique([tenantId, provider, instanceName])
+  @@unique([provider, instanceName])
+  @@unique([provider, providerInstanceId])
+  @@unique([provider, providerAccountId])
   @@index([tenantId])
   @@index([tenantId, phoneNumber])
   @@index([tenantId, provider])

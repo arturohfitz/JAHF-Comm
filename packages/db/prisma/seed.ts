@@ -87,7 +87,8 @@ async function main() {
   const tenant = await prisma.tenant.create({
     data: {
       name: "JAHF Demo",
-      slug: "jahf-demo"
+      slug: "jahf-demo",
+      onboardingCompletedAt: new Date()
     }
   });
 
